@@ -1,0 +1,46 @@
+name: ouqro_wallet
+description: Octra Wallet – local keygen, import/export, explorer-based balance & history
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  provider: ^6.1.2
+
+  # Networking (Octra explorer)
+  http: ^1.2.1
+
+  # Secure storage (keys, wallet)
+  flutter_secure_storage: ^9.0.0
+
+  # Crypto / keys
+  bip39: ^1.0.6
+  cryptography: ^2.7.0
+  convert: ^3.1.1
+  crypto: ^3.0.3
+
+  # UI / Assets
+  google_fonts: ^6.2.1
+  cupertino_icons: ^1.0.8
+  flutter_animate: ^4.5.0
+
+  # (Optional but recommended – safe to add later)
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^5.0.0
+  local_auth: ^2.1.6
+  url_launcher: ^6.2.1
+
+  flutter_launcher_icons: "^0.13.1"
+  flutter_native_splash: "^2.4.0"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/

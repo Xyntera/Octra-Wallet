@@ -158,13 +158,13 @@ class _DashboardTabState extends State<DashboardTab> {
                         constraints: const BoxConstraints(maxWidth: 320),
                         padding: const EdgeInsets.symmetric(horizontal: 24),
                         child: Column(
-                          gap: 16,
                           children: [
                             _buildModernButton(
                               label: "Send Octra", 
                               isPrimary: true, 
                               onTap: () => _showSendSheet(context)
                             ),
+                            const SizedBox(height: 16),
                             _buildModernButton(
                               label: "Receive", 
                               isPrimary: false, 
@@ -185,7 +185,7 @@ class _DashboardTabState extends State<DashboardTab> {
                               },
                               child: AnimatedContainer(
                                 duration: 200.ms,
-                                margin: const EdgeInsets.top(24),
+                                margin: const EdgeInsets.only(top: 24),
                                 padding: const EdgeInsets.symmetric(vertical: 8),
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
@@ -244,7 +244,7 @@ class _DashboardTabState extends State<DashboardTab> {
        duration: 200.ms,
        opacity: _isPrivateMode ? 0.5 : 1.0,
        child: ImageFiltered(
-         imageFilter: dart.ui.ImageFilter.blur(
+         imageFilter: ui.ImageFilter.blur(
             sigmaX: _isPrivateMode ? 10 : 0, 
             sigmaY: _isPrivateMode ? 10 : 0
          ),

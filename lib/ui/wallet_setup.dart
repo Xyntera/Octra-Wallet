@@ -48,12 +48,12 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
                 const SizedBox(height: 24),
                 Text(
                   'Octra Wallet',
-                    color: const Color(0xFF111111),
+                  style: GoogleFonts.inter(fontSize: 32, fontWeight: FontWeight.bold, color: const Color(0xFF111111)),
                 ).animate().fadeIn().moveY(begin: 10, end: 0).shimmer(delay: 1200.ms, color: const Color(0x3DFFFFFF)),
                 const SizedBox(height: 8),
                 Text(
                   'Secure, Private, Fast.',
-                    color: const Color(0xFF666666),
+                  style: GoogleFonts.inter(fontSize: 16, color: const Color(0xFF666666)),
                 ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2, end: 0),
                 const Spacer(),
                 

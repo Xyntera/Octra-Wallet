@@ -1,12 +1,12 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Material, Colors, Icons, LinearGradient, Alignment, Scaffold, SelectableText;
+import 'package:flutter/material.dart' show Colors, Icons, Scaffold;
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:local_auth/local_auth.dart';
 
 import '../wallet.dart';
 import '../models.dart';
@@ -17,12 +17,12 @@ import 'success_animation.dart';
 import 'pin_screen.dart';
 
 // ============================================================================
-// SWISS MINIMALIST DESIGN - BLACK & WHITE MODERN UI
+// OCTRA WALLET - SWISS MINIMALIST DESIGN
+// Developer: @glaqzz on X
 // ============================================================================
 
 class HomeTabScaffold extends StatefulWidget {
   const HomeTabScaffold({super.key});
-
   @override
   State<HomeTabScaffold> createState() => _HomeTabScaffoldState();
 }
@@ -39,15 +39,18 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> {
           Expanded(
             child: IndexedStack(
               index: _currentTab,
-              children: const [
-                WalletTab(),
-                EncryptTab(),
-                KeysTab(),
-              ],
+              children: const [WalletTab(), EncryptTab(), HistoryTab(), SettingsTab()],
             ),
           ),
-          // Swiss Tab Bar
           _buildTabBar(),
+          // Developer Credit Watermark
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: GestureDetector(
+              onTap: () => launchUrl(Uri.parse('https://x.com/glaqzz')),
+              child: Text('DEV @GLAQZZ', style: TextStyle(fontFamily: 'Courier New', fontSize: 8, letterSpacing: 1, color: Colors.grey[400])),
+            ),
+          ),
         ],
       ),
     );
@@ -55,51 +58,29 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> {
 
   Widget _buildTabBar() {
     return Container(
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: Colors.black, width: 1)),
-      ),
-      height: 60,
-      child: Row(
-        children: [
-          _buildTab('WALLET', 0),
-          _buildTab('ENCRYPT', 1),
-          _buildTab('KEYS', 2),
-        ],
-      ),
+      decoration: const BoxDecoration(border: Border(top: BorderSide(color: Colors.black, width: 1))),
+      height: 56,
+      child: Row(children: [
+        _buildTab('WALLET', 0, CupertinoIcons.creditcard),
+        _buildTab('ENCRYPT', 1, CupertinoIcons.lock),
+        _buildTab('HISTORY', 2, CupertinoIcons.time),
+        _buildTab('SETTINGS', 3, CupertinoIcons.gear),
+      ]),
     );
   }
 
-  Widget _buildTab(String label, int index) {
+  Widget _buildTab(String label, int index, IconData icon) {
     final isActive = _currentTab == index;
     return Expanded(
       child: GestureDetector(
         onTap: () => setState(() => _currentTab = index),
         behavior: HitTestBehavior.opaque,
-        child: Stack(
-          alignment: Alignment.center,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Helvetica Neue',
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.5,
-                color: isActive ? Colors.black : const Color(0xFF999999),
-              ),
-            ),
-            if (isActive)
-              Positioned(
-                bottom: 8,
-                child: Container(
-                  width: 4,
-                  height: 4,
-                  decoration: const BoxDecoration(
-                    color: Colors.black,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
+            Icon(icon, size: 20, color: isActive ? Colors.black : Colors.grey),
+            const SizedBox(height: 4),
+            Text(label, style: TextStyle(fontFamily: 'Helvetica Neue', fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1, color: isActive ? Colors.black : Colors.grey)),
           ],
         ),
       ),
@@ -108,547 +89,190 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> {
 }
 
 // ============================================================================
-// WALLET TAB - Main Dashboard
+// WALLET TAB - Clean Dashboard
 // ============================================================================
-
 class WalletTab extends StatefulWidget {
   const WalletTab({super.key});
-
   @override
   State<WalletTab> createState() => _WalletTabState();
 }
 
 class _WalletTabState extends State<WalletTab> {
-  bool _isPrivateVisible = false;
+  bool _showPrivate = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<WalletController>().refresh();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => context.read<WalletController>().refresh());
   }
 
   @override
   Widget build(BuildContext context) {
-    final walletCtrl = context.watch<WalletController>();
-    final wallet = walletCtrl.currentWallet;
-
-    if (wallet == null) {
-      return const Center(child: CupertinoActivityIndicator());
-    }
-
-    // Format balance
-    final balance = walletCtrl.publicBalance;
-    final balanceUsd = (balance * 2.97).toStringAsFixed(0); // Mock USD conversion
-    final balanceOct = balance.toStringAsFixed(2);
+    final ctrl = context.watch<WalletController>();
+    final wallet = ctrl.currentWallet;
+    if (wallet == null) return const Center(child: CupertinoActivityIndicator());
 
     return SafeArea(
       child: Column(
         children: [
-          // Header
-          _buildHeader(context),
-          
-          // Main Content
+          _buildHeader(context, ctrl),
           Expanded(
             child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 40),
-                    
-                    // Balance Label
-                    const Text(
-                      'CURRENT BALANCE',
-                      style: TextStyle(
-                        fontFamily: 'Helvetica Neue',
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.5,
-                        color: Colors.black,
-                      ),
-                    ).animate().fadeIn(duration: 300.ms),
-                    
-                    const SizedBox(height: 20),
-                    
-                    // Hero Balance
-                    Text(
-                      '\$$balanceUsd',
-                      style: const TextStyle(
-                        fontFamily: 'Helvetica Neue',
-                        fontSize: 64,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: -2,
-                        color: Colors.black,
-                        height: 1,
-                      ),
-                    ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0),
-                    
-                    const SizedBox(height: 10),
-                    
-                    // OCT Balance
-                    Text(
-                      '$balanceOct OCT',
-                      style: const TextStyle(
-                        fontFamily: 'Helvetica Neue',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w400,
-                        color: Color(0xFF555555),
-                      ),
-                    ).animate().fadeIn(delay: 100.ms),
-                    
-                    const SizedBox(height: 30),
-                    
-                    // Private Card
-                    _buildPrivateCard(walletCtrl),
-                    
-                    const SizedBox(height: 20),
-                    
-                    // Send Button
-                    _buildPrimaryButton(
-                      'SEND OCTRA',
-                      Icons.arrow_forward,
-                      () => _showSendSheet(context),
-                    ),
-                    
-                    const SizedBox(height: 15),
-                    
-                    // Secondary Actions Grid
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildSecondaryButton(
-                            'RECEIVE',
-                            () => _showReceiveSheet(context, wallet.address),
-                          ),
-                        ),
-                        const SizedBox(width: 15),
-                        Expanded(
-                          child: _buildSecondaryButton(
-                            'SCAN',
-                            () => _openScanner(context),
-                          ),
-                        ),
-                      ],
-                    ),
-                    
-                    const SizedBox(height: 40),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.black, width: 1)),
-      ),
-      height: 70,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Text(
-            'OCTRA',
-            style: TextStyle(
-              fontFamily: 'Helvetica Neue',
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 3,
-              color: Colors.black,
-            ),
-          ),
-          GestureDetector(
-            onTap: () => _showAccountMenu(context),
-            child: Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.black, width: 1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.person_outline, size: 16, color: Colors.black),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPrivateCard(WalletController walletCtrl) {
-    return GestureDetector(
-      onTap: () => setState(() => _isPrivateVisible = !_isPrivateVisible),
-      child: Container(
-        width: double.infinity,
-        constraints: const BoxConstraints(maxWidth: 340),
-        padding: const EdgeInsets.all(20),
-        decoration: const BoxDecoration(color: Colors.black),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Label Row
-            Container(
-              padding: const EdgeInsets.only(bottom: 8),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: Colors.white30, width: 1)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              padding: const EdgeInsets.all(20),
+              child: Column(
                 children: [
-                  Text(
-                    'PRIVATE STASH',
-                    style: TextStyle(
-                      fontFamily: 'Courier New',
-                      fontSize: 10,
-                      letterSpacing: 0.5,
-                      color: Colors.white.withOpacity(0.9),
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      const Icon(Icons.lock_outline, size: 10, color: Colors.white70),
-                      const SizedBox(width: 4),
-                      Text(
-                        'ENCRYPTED',
-                        style: TextStyle(
-                          fontFamily: 'Courier New',
-                          fontSize: 10,
-                          letterSpacing: 0.5,
-                          color: Colors.white.withOpacity(0.9),
-                        ),
-                      ),
-                    ],
-                  ),
+                  const SizedBox(height: 20),
+                  // Balance Card
+                  _buildBalanceCard(ctrl),
+                  const SizedBox(height: 24),
+                  // Actions
+                  _buildActionButton('SEND', CupertinoIcons.arrow_up_circle, () => _showSendSheet(context)),
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    Expanded(child: _buildSecondaryBtn('RECEIVE', () => _showReceiveSheet(context, wallet.address))),
+                    const SizedBox(width: 12),
+                    Expanded(child: _buildSecondaryBtn('SCAN', () => _openScanner(context))),
+                  ]),
                 ],
               ),
             ),
-            
-            const SizedBox(height: 15),
-            
-            // Private Balance
-            Text(
-              _isPrivateVisible 
-                  ? '${walletCtrl.encryptedBalance.toStringAsFixed(2)} OCT'
-                  : '••••••••',
-              style: const TextStyle(
-                fontFamily: 'Helvetica Neue',
-                fontSize: 24,
-                fontWeight: FontWeight.w500,
-                letterSpacing: -0.5,
-                color: Colors.white,
-              ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, WalletController ctrl) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black))),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => _showWalletPicker(context, ctrl),
+            child: Row(children: [
+              Container(width: 12, height: 12, decoration: BoxDecoration(color: Color(ctrl.currentWallet?.color ?? 0xFF000000), shape: BoxShape.circle)),
+              const SizedBox(width: 8),
+              Text(ctrl.currentWallet?.name.toUpperCase() ?? 'WALLET', style: const TextStyle(fontFamily: 'Helvetica Neue', fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 2)),
+              const SizedBox(width: 4),
+              const Icon(CupertinoIcons.chevron_down, size: 14),
+            ]),
+          ),
+          const Spacer(),
+          GestureDetector(
+            onTap: () => ctrl.refresh(),
+            child: ctrl.isLoading ? const CupertinoActivityIndicator(radius: 10) : const Icon(CupertinoIcons.refresh, size: 20),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBalanceCard(WalletController ctrl) {
+    return GestureDetector(
+      onTap: () => setState(() => _showPrivate = !_showPrivate),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(2)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(_showPrivate ? 'PRIVATE BALANCE' : 'PUBLIC BALANCE', style: TextStyle(fontFamily: 'Courier New', fontSize: 10, color: Colors.white.withOpacity(0.6), letterSpacing: 1)),
+                Icon(_showPrivate ? CupertinoIcons.lock_fill : CupertinoIcons.lock_open, size: 14, color: Colors.white54),
+              ],
             ),
-            
-            const SizedBox(height: 15),
-            
-            // ID
+            const SizedBox(height: 16),
             Text(
-              'ID: ${walletCtrl.currentWallet?.address.substring(0, 10) ?? "---"}',
-              style: TextStyle(
-                fontFamily: 'Courier New',
-                fontSize: 9,
-                letterSpacing: 0.5,
-                color: Colors.white.withOpacity(0.6),
-              ),
+              _showPrivate ? '${ctrl.encryptedBalance.toStringAsFixed(6)} OCT' : '${ctrl.publicBalance.toStringAsFixed(6)} OCT',
+              style: const TextStyle(fontFamily: 'Helvetica Neue', fontSize: 32, fontWeight: FontWeight.w500, color: Colors.white, letterSpacing: -1),
             ),
+            const SizedBox(height: 8),
+            Text('TAP TO ${_showPrivate ? 'SHOW PUBLIC' : 'SHOW PRIVATE'}', style: TextStyle(fontFamily: 'Courier New', fontSize: 9, color: Colors.white.withOpacity(0.4))),
           ],
         ),
       ),
-    ).animate().fadeIn(delay: 200.ms).scale(begin: const Offset(0.98, 0.98), end: const Offset(1, 1));
+    ).animate().fadeIn();
   }
 
-  Widget _buildPrimaryButton(String label, IconData icon, VoidCallback onTap) {
+  Widget _buildActionButton(String label, IconData icon, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: double.infinity,
-        constraints: const BoxConstraints(maxWidth: 340),
         height: 56,
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.black, width: 1),
-        ),
+        decoration: BoxDecoration(border: Border.all(color: Colors.black)),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Expanded(
-              child: Center(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    fontFamily: 'Helvetica Neue',
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.5,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-            ),
-            Container(
-              width: 56,
-              height: double.infinity,
-              decoration: const BoxDecoration(
-                border: Border(left: BorderSide(color: Colors.black, width: 1)),
-              ),
-              child: Icon(icon, size: 16, color: Colors.black),
-            ),
+            Icon(icon, size: 18),
+            const SizedBox(width: 12),
+            Text(label, style: const TextStyle(fontFamily: 'Helvetica Neue', fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 2)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSecondaryButton(String label, VoidCallback onTap) {
+  Widget _buildSecondaryBtn(String label, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         height: 48,
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.black, width: 1),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontFamily: 'Helvetica Neue',
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.5,
-              color: Colors.black,
-            ),
-          ),
-        ),
+        decoration: BoxDecoration(border: Border.all(color: Colors.black)),
+        child: Center(child: Text(label, style: const TextStyle(fontFamily: 'Helvetica Neue', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.5))),
       ),
     );
   }
 
-  // ============================================================================
-  // SHEET METHODS
-  // ============================================================================
-
-  void _showAccountMenu(BuildContext context) {
-    final walletCtrl = context.read<WalletController>();
+  void _showWalletPicker(BuildContext context, WalletController ctrl) {
     showCupertinoModalPopup(
       context: context,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(0)),
-          border: Border(top: BorderSide(color: Colors.black, width: 1)),
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildMenuHeader(),
-              _buildMenuItem('SWITCH WALLET', Icons.swap_horiz, () {
-                Navigator.pop(context);
-                _showWalletsSheet(context);
-              }),
-              _buildMenuItem('EXPORT WALLET', Icons.file_upload_outlined, () {
-                Navigator.pop(context);
-                _exportWallet(context);
-              }),
-              _buildMenuItem('SECURITY', Icons.shield_outlined, () {
-                Navigator.pop(context);
-                Navigator.of(context).push(CupertinoPageRoute(builder: (_) => const SecuritySettingsPage()));
-              }),
-              _buildMenuItem('ABOUT', Icons.info_outline, () {
-                Navigator.pop(context);
-                _showAbout(context);
-              }),
-              const SizedBox(height: 20),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMenuHeader() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.black, width: 1)),
-      ),
-      child: Row(
-        children: [
-          const Text(
-            'MENU',
-            style: TextStyle(
-              fontFamily: 'Helvetica Neue',
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 3,
-              color: Colors.black,
-            ),
-          ),
-          const Spacer(),
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: const Icon(Icons.close, size: 20, color: Colors.black),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMenuItem(String label, IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE), width: 1)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: Colors.black),
-            const SizedBox(width: 16),
-            Text(
-              label,
-              style: const TextStyle(
-                fontFamily: 'Helvetica Neue',
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1,
-                color: Colors.black,
-              ),
-            ),
-            const Spacer(),
-            const Icon(Icons.arrow_forward_ios, size: 12, color: Color(0xFF999999)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showWalletsSheet(BuildContext context) {
-    final walletCtrl = context.read<WalletController>();
-    showCupertinoModalPopup(
-      context: context,
-      builder: (context) => Container(
+      builder: (_) => Container(
         height: 400,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: Colors.black, width: 1)),
-        ),
+        color: Colors.white,
         child: Column(
           children: [
             Container(
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: Colors.black, width: 1)),
-              ),
-              child: Row(
-                children: [
-                  const Text(
-                    'WALLETS',
-                    style: TextStyle(
-                      fontFamily: 'Helvetica Neue',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 3,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: const Icon(Icons.close, size: 20, color: Colors.black),
-                  ),
-                ],
-              ),
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black))),
+              child: Row(children: [
+                const Text('SELECT WALLET', style: TextStyle(fontFamily: 'Helvetica Neue', fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 2)),
+                const Spacer(),
+                GestureDetector(onTap: () => Navigator.pop(context), child: const Icon(Icons.close, size: 20)),
+              ]),
             ),
             Expanded(
               child: ListView.builder(
-                itemCount: walletCtrl.wallets.length + 1,
-                itemBuilder: (ctx, idx) {
-                  if (idx == walletCtrl.wallets.length) {
-                    return GestureDetector(
+                itemCount: ctrl.wallets.length + 1,
+                itemBuilder: (ctx, i) {
+                  if (i == ctrl.wallets.length) {
+                    return ListTile(
+                      leading: const Icon(Icons.add),
+                      title: const Text('ADD WALLET'),
                       onTap: () {
                         Navigator.pop(context);
-                        Navigator.of(context, rootNavigator: true).push(
-                          CupertinoPageRoute(builder: (_) => const WalletSetupPage()),
-                        );
+                        Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(builder: (_) => const WalletSetupPage()));
                       },
-                      child: Container(
-                        padding: const EdgeInsets.all(20),
-                        child: Row(
-                          children: const [
-                            Icon(Icons.add, size: 18, color: Colors.black),
-                            SizedBox(width: 16),
-                            Text(
-                              'ADD WALLET',
-                              style: TextStyle(
-                                fontFamily: 'Helvetica Neue',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 1,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                     );
                   }
-                  final w = walletCtrl.wallets[idx];
-                  final isSelected = w == walletCtrl.currentWallet;
-                  return GestureDetector(
+                  final w = ctrl.wallets[i];
+                  return ListTile(
+                    leading: Container(width: 24, height: 24, decoration: BoxDecoration(color: Color(w.color), shape: BoxShape.circle)),
+                    title: Text(w.name.toUpperCase()),
+                    subtitle: Text('${w.address.substring(0, 12)}...', style: const TextStyle(fontFamily: 'Courier New', fontSize: 10)),
+                    trailing: w == ctrl.currentWallet ? const Icon(Icons.check, color: Colors.green) : null,
                     onTap: () {
-                      walletCtrl.selectWallet(w);
+                      ctrl.selectWallet(w);
                       Navigator.pop(context);
                     },
-                    child: Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: isSelected ? const Color(0xFFF5F5F5) : Colors.white,
-                        border: const Border(bottom: BorderSide(color: Color(0xFFEEEEEE), width: 1)),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-                            size: 18,
-                            color: Colors.black,
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  w.name.toUpperCase(),
-                                  style: const TextStyle(
-                                    fontFamily: 'Helvetica Neue',
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 1,
-                                    color: Colors.black,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${w.address.substring(0, 12)}...',
-                                  style: const TextStyle(
-                                    fontFamily: 'Courier New',
-                                    fontSize: 10,
-                                    color: Color(0xFF666666),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    onLongPress: () {
+                      Navigator.pop(context);
+                      _showEditWallet(context, w, ctrl);
+                    },
                   );
                 },
               ),
@@ -659,320 +283,116 @@ class _WalletTabState extends State<WalletTab> {
     );
   }
 
-  void _showSendSheet(BuildContext context) {
-    _showTransactionForm(context, title: 'SEND', buttonText: 'SEND', isPublic: true);
-  }
+  void _showEditWallet(BuildContext context, Wallet w, WalletController ctrl) {
+    final nameCtrl = TextEditingController(text: w.name);
+    int selectedColor = w.color;
+    final colors = [0xFF000000, 0xFF357AF6, 0xFF32D74B, 0xFFFF9F0A, 0xFFFF375F, 0xFFBF5AF2, 0xFFFFD60A, 0xFF64D2FF];
 
-  void _showReceiveSheet(BuildContext context, String address) {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.7,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: Colors.black, width: 1)),
-        ),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: Colors.black, width: 1)),
-              ),
-              child: Row(
-                children: [
-                  const Text(
-                    'RECEIVE',
-                    style: TextStyle(
-                      fontFamily: 'Helvetica Neue',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 3,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: const Icon(Icons.close, size: 20, color: Colors.black),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.black, width: 1),
-                    ),
-                    child: QrImageView(
-                      data: address,
-                      size: 200,
-                      backgroundColor: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 40),
-                    child: Text(
-                      address,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontFamily: 'Courier New',
-                        fontSize: 11,
-                        color: Color(0xFF555555),
-                        height: 1.5,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  GestureDetector(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: address));
-                      Navigator.pop(context);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                      decoration: const BoxDecoration(color: Colors.black),
-                      child: const Text(
-                        'COPY ADDRESS',
-                        style: TextStyle(
-                          fontFamily: 'Helvetica Neue',
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.5,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _openScanner(BuildContext context) async {
-    final result = await Navigator.of(context).push<String>(
-      CupertinoPageRoute(builder: (_) => const ScannerPage()),
-    );
-    if (result != null && result.isNotEmpty) {
-      _showTransactionForm(context, title: 'SEND', buttonText: 'SEND', isPublic: true, prefillAddress: result);
-    }
-  }
-
-  void _exportWallet(BuildContext context) {
-    final walletCtrl = context.read<WalletController>();
-    final wallet = walletCtrl.currentWallet;
-    if (wallet == null) return;
-    
     showCupertinoDialog(
       context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('Export Wallet'),
-        content: Column(
-          children: [
-            const SizedBox(height: 16),
-            if (wallet.mnemonic != null && wallet.mnemonic!.isNotEmpty) ...[
-              const Text('SEED PHRASE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-              const SizedBox(height: 8),
-              SelectableText(wallet.mnemonic!, style: const TextStyle(fontSize: 12)),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState2) => CupertinoAlertDialog(
+          title: const Text('EDIT WALLET'),
+          content: Column(
+            children: [
               const SizedBox(height: 16),
+              CupertinoTextField(controller: nameCtrl, placeholder: 'Wallet Name'),
+              const SizedBox(height: 16),
+              const Text('COLOR', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: colors.map((c) => GestureDetector(
+                  onTap: () => setState2(() => selectedColor = c),
+                  child: Container(
+                    width: 32, height: 32,
+                    decoration: BoxDecoration(color: Color(c), shape: BoxShape.circle, border: selectedColor == c ? Border.all(color: Colors.white, width: 3) : null),
+                  ),
+                )).toList(),
+              ),
             ],
-            const Text('PRIVATE KEY', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-            const SizedBox(height: 8),
-            SelectableText(wallet.privateKeyBase64, style: const TextStyle(fontSize: 10)),
+          ),
+          actions: [
+            CupertinoDialogAction(child: const Text('DELETE', style: TextStyle(color: Colors.red)), onPressed: () {
+              ctrl.deleteWallet(w.address);
+              Navigator.pop(ctx);
+            }),
+            CupertinoDialogAction(child: const Text('CANCEL'), onPressed: () => Navigator.pop(ctx)),
+            CupertinoDialogAction(child: const Text('SAVE'), isDefaultAction: true, onPressed: () {
+              ctrl.updateWallet(w.address, name: nameCtrl.text, color: selectedColor);
+              Navigator.pop(ctx);
+            }),
           ],
         ),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('Copy Seed'),
-            onPressed: () {
-              if (wallet.mnemonic != null) {
-                Clipboard.setData(ClipboardData(text: wallet.mnemonic!));
-              }
-              Navigator.pop(ctx);
-            },
-          ),
-          CupertinoDialogAction(
-            child: const Text('Close'),
-            onPressed: () => Navigator.pop(ctx),
-          ),
-        ],
       ),
     );
   }
 
-  void _showAbout(BuildContext context) {
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('OCTRA WALLET'),
-        content: const Column(
-          children: [
-            SizedBox(height: 16),
-            Text('Built by ouqro.tech'),
-            Text('Code by Xyntera'),
-            SizedBox(height: 8),
-            Text('v1.0.0', style: TextStyle(fontSize: 12, color: Color(0xFF666666))),
-          ],
-        ),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('Close'),
-            onPressed: () => Navigator.pop(ctx),
-          ),
-        ],
-      ),
-    );
+  void _showSendSheet(BuildContext context) => _showTxForm(context, title: 'SEND', isPublic: true);
+  void _showReceiveSheet(BuildContext ctx, String addr) {
+    showCupertinoModalPopup(context: ctx, builder: (_) => Container(
+      height: 500, color: Colors.white,
+      child: Column(children: [
+        Container(padding: const EdgeInsets.all(16), decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black))),
+          child: Row(children: [const Text('RECEIVE', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 2)), const Spacer(), GestureDetector(onTap: () => Navigator.pop(ctx), child: const Icon(Icons.close))])),
+        const SizedBox(height: 24),
+        Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(border: Border.all(color: Colors.black)), child: QrImageView(data: addr, size: 180)),
+        const SizedBox(height: 16),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 32), child: Text(addr, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Courier New', fontSize: 10))),
+        const SizedBox(height: 16),
+        GestureDetector(onTap: () { Clipboard.setData(ClipboardData(text: addr)); Navigator.pop(ctx); },
+          child: Container(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12), color: Colors.black, child: const Text('COPY', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, letterSpacing: 1)))),
+      ]),
+    ));
+  }
+  void _openScanner(BuildContext ctx) async {
+    final result = await Navigator.of(ctx).push<String>(CupertinoPageRoute(builder: (_) => const ScannerPage()));
+    if (result != null) _showTxForm(ctx, title: 'SEND', isPublic: true, prefill: result);
   }
 }
 
 // ============================================================================
 // ENCRYPT TAB
 // ============================================================================
-
 class EncryptTab extends StatelessWidget {
   const EncryptTab({super.key});
-
   @override
   Widget build(BuildContext context) {
-    final walletCtrl = context.watch<WalletController>();
-    
+    final ctrl = context.watch<WalletController>();
     return SafeArea(
       child: Column(
         children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.black, width: 1)),
-            ),
-            height: 70,
-            child: const Row(
-              children: [
-                Text(
-                  'ENCRYPT',
-                  style: TextStyle(
-                    fontFamily: 'Helvetica Neue',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 3,
-                    color: Colors.black,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          
+          Container(padding: const EdgeInsets.all(16), decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black))),
+            child: const Row(children: [Text('PRIVATE OPERATIONS', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 2))])),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Encrypted Balance Card
                   Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    decoration: const BoxDecoration(color: Colors.black),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'ENCRYPTED BALANCE',
-                          style: TextStyle(
-                            fontFamily: 'Courier New',
-                            fontSize: 10,
-                            letterSpacing: 0.5,
-                            color: Colors.white.withOpacity(0.7),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          '${walletCtrl.encryptedBalance.toStringAsFixed(6)} OCT',
-                          style: const TextStyle(
-                            fontFamily: 'Helvetica Neue',
-                            fontSize: 28,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
+                    width: double.infinity, padding: const EdgeInsets.all(20), color: Colors.black,
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('ENCRYPTED', style: TextStyle(fontFamily: 'Courier New', fontSize: 10, color: Colors.white.withOpacity(0.6))),
+                      const SizedBox(height: 8),
+                      Text('${ctrl.encryptedBalance.toStringAsFixed(6)} OCT', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w500, color: Colors.white)),
+                    ]),
                   ),
-                  
                   const SizedBox(height: 20),
-                  
-                  // Actions
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildActionButton(
-                          'ENCRYPT',
-                          () => _showTransactionForm(context, title: 'ENCRYPT', buttonText: 'ENCRYPT', isEncrypt: true),
-                        ),
-                      ),
-                      const SizedBox(width: 15),
-                      Expanded(
-                        child: _buildActionButton(
-                          'DECRYPT',
-                          () => _showTransactionForm(context, title: 'DECRYPT', buttonText: 'DECRYPT', isDecrypt: true),
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 15),
-                  
-                  _buildActionButton(
-                    'PRIVATE TRANSFER',
-                    () => _showTransactionForm(context, title: 'PRIVATE TRANSFER', buttonText: 'SEND', isPrivateTransfer: true),
-                  ),
-                  
-                  const SizedBox(height: 30),
-                  
-                  // Pending Claims
-                  const Text(
-                    'PENDING CLAIMS',
-                    style: TextStyle(
-                      fontFamily: 'Helvetica Neue',
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.5,
-                      color: Colors.black,
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  if (walletCtrl.pendingPrivateTransfers.isEmpty)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(40),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: const Color(0xFFEEEEEE), width: 1),
-                      ),
-                      child: const Center(
-                        child: Text(
-                          'NO PENDING TRANSFERS',
-                          style: TextStyle(
-                            fontFamily: 'Helvetica Neue',
-                            fontSize: 11,
-                            letterSpacing: 1,
-                            color: Color(0xFF999999),
-                          ),
-                        ),
-                      ),
-                    )
+                  Row(children: [
+                    Expanded(child: _btn('ENCRYPT', () => _showTxForm(context, title: 'ENCRYPT', isEncrypt: true))),
+                    const SizedBox(width: 12),
+                    Expanded(child: _btn('DECRYPT', () => _showTxForm(context, title: 'DECRYPT', isDecrypt: true))),
+                  ]),
+                  const SizedBox(height: 12),
+                  _btn('PRIVATE TRANSFER', () => _showTxForm(context, title: 'PRIVATE TRANSFER', isPrivate: true)),
+                  const SizedBox(height: 24),
+                  const Align(alignment: Alignment.centerLeft, child: Text('PENDING CLAIMS', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1))),
+                  const SizedBox(height: 12),
+                  if (ctrl.pendingPrivateTransfers.isEmpty)
+                    Container(padding: const EdgeInsets.all(32), decoration: BoxDecoration(border: Border.all(color: Colors.grey[300]!)),
+                      child: const Center(child: Text('NO PENDING', style: TextStyle(color: Colors.grey))))
                   else
-                    ...walletCtrl.pendingPrivateTransfers.map((tx) => _buildClaimTile(context, tx, walletCtrl)),
+                    ...ctrl.pendingPrivateTransfers.map((tx) => _claimTile(context, tx, ctrl)),
                 ],
               ),
             ),
@@ -982,414 +402,71 @@ class EncryptTab extends StatelessWidget {
     );
   }
 
-  Widget _buildActionButton(String label, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 48,
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.black, width: 1),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontFamily: 'Helvetica Neue',
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.5,
-              color: Colors.black,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _btn(String label, VoidCallback onTap) => GestureDetector(
+    onTap: onTap,
+    child: Container(height: 48, decoration: BoxDecoration(border: Border.all(color: Colors.black)),
+      child: Center(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1)))),
+  );
 
-  Widget _buildClaimTile(BuildContext context, dynamic tx, WalletController wallet) {
+  Widget _claimTile(BuildContext ctx, dynamic tx, WalletController ctrl) {
     final id = tx['id'];
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.black, width: 1),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.lock_open, size: 18, color: Colors.black),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(
-              'TRANSFER #$id',
-              style: const TextStyle(
-                fontFamily: 'Helvetica Neue',
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1,
-                color: Colors.black,
-              ),
-            ),
-          ),
-          GestureDetector(
-            onTap: () async {
-              final ephKey = tx['ephemeral_public_key'];
-              final encAmt = tx['encrypted_amount'];
-              final success = await wallet.claimTransfer(id.toString(), ephKey, encAmt);
-              showCupertinoDialog(
-                context: context,
-                builder: (ctx) => CupertinoAlertDialog(
-                  title: Text(success ? 'CLAIMED' : 'FAILED'),
-                  actions: [
-                    CupertinoDialogAction(
-                      child: const Text('OK'),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-              );
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: const BoxDecoration(color: Colors.black),
-              child: const Text(
-                'CLAIM',
-                style: TextStyle(
-                  fontFamily: 'Helvetica Neue',
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+      margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(border: Border.all(color: Colors.black)),
+      child: Row(children: [
+        const Icon(CupertinoIcons.gift, size: 18),
+        const SizedBox(width: 12),
+        Expanded(child: Text('TRANSFER #$id', style: const TextStyle(fontWeight: FontWeight.w600))),
+        GestureDetector(
+          onTap: () async {
+            final ok = await ctrl.claimTransfer(id.toString(), tx['ephemeral_public_key'], tx['encrypted_amount']);
+            showCupertinoDialog(context: ctx, builder: (_) => CupertinoAlertDialog(title: Text(ok ? 'CLAIMED' : 'FAILED'), actions: [CupertinoDialogAction(child: const Text('OK'), onPressed: () => Navigator.pop(ctx))]));
+          },
+          child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), color: Colors.black, child: const Text('CLAIM', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700))),
+        ),
+      ]),
     );
   }
 }
 
 // ============================================================================
-// KEYS TAB (History)
+// HISTORY TAB
 // ============================================================================
-
-class KeysTab extends StatelessWidget {
-  const KeysTab({super.key});
-
+class HistoryTab extends StatelessWidget {
+  const HistoryTab({super.key});
   @override
   Widget build(BuildContext context) {
-    final walletCtrl = context.watch<WalletController>();
-    
+    final ctrl = context.watch<WalletController>();
     return SafeArea(
       child: Column(
         children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.black, width: 1)),
-            ),
-            height: 70,
-            child: Row(
-              children: [
-                const Text(
-                  'HISTORY',
-                  style: TextStyle(
-                    fontFamily: 'Helvetica Neue',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 3,
-                    color: Colors.black,
-                  ),
-                ),
-                const Spacer(),
-                GestureDetector(
-                  onTap: () => walletCtrl.refresh(),
-                  child: const Icon(Icons.refresh, size: 20, color: Colors.black),
-                ),
-              ],
-            ),
-          ),
-          
+          Container(padding: const EdgeInsets.all(16), decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black))),
+            child: Row(children: [const Text('TRANSACTION HISTORY', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 2)), const Spacer(), GestureDetector(onTap: () => ctrl.refresh(), child: const Icon(CupertinoIcons.refresh, size: 18))])),
           Expanded(
-            child: walletCtrl.history.isEmpty
-                ? const Center(
-                    child: Text(
-                      'NO TRANSACTIONS',
-                      style: TextStyle(
-                        fontFamily: 'Helvetica Neue',
-                        fontSize: 11,
-                        letterSpacing: 1,
-                        color: Color(0xFF999999),
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: walletCtrl.history.length,
-                    itemBuilder: (ctx, idx) {
-                      final tx = walletCtrl.history[idx];
-                      return _buildTransactionRow(context, tx);
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTransactionRow(BuildContext context, Map<String, dynamic> tx) {
-    final hash = tx['hash'] ?? '';
-    final direction = tx['direction'] ?? 'IN';
-    final isIn = direction == 'IN';
-    final amountStr = tx['amount'] ?? '0';
-    double amt = double.tryParse(amountStr.toString()) ?? 0.0;
-    
-    return GestureDetector(
-      onTap: () => _showTransactionDetails(context, tx),
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE), width: 1)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.black, width: 1),
-              ),
-              child: Icon(
-                isIn ? Icons.arrow_downward : Icons.arrow_upward,
-                size: 16,
-                color: Colors.black,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isIn ? 'RECEIVED' : 'SENT',
-                    style: const TextStyle(
-                      fontFamily: 'Helvetica Neue',
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    hash.length > 16 ? '${hash.substring(0, 16)}...' : hash,
-                    style: const TextStyle(
-                      fontFamily: 'Courier New',
-                      fontSize: 10,
-                      color: Color(0xFF666666),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Text(
-              '${isIn ? '+' : '-'}${amt.toStringAsFixed(2)} OCT',
-              style: TextStyle(
-                fontFamily: 'Helvetica Neue',
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isIn ? const Color(0xFF00AA00) : Colors.black,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showTransactionDetails(BuildContext context, Map<String, dynamic> tx) {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (context) => _TransactionDetailsSheet(initialTx: tx),
-    );
-  }
-}
-
-// ============================================================================
-// TRANSACTION DETAILS SHEET
-// ============================================================================
-
-class _TransactionDetailsSheet extends StatefulWidget {
-  final Map<String, dynamic> initialTx;
-  const _TransactionDetailsSheet({required this.initialTx});
-
-  @override
-  State<_TransactionDetailsSheet> createState() => _TransactionDetailsSheetState();
-}
-
-class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
-  Map<String, dynamic>? fullTx;
-  bool loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetch();
-  }
-
-  Future<void> _fetch() async {
-    final wallet = context.read<WalletController>();
-    final hash = widget.initialTx['hash'];
-    if (hash != null && hash.isNotEmpty) {
-      final res = await wallet.getTransactionFullDetails(hash);
-      if (mounted) {
-        setState(() {
-          if (res != null) fullTx = res;
-          loading = false;
-        });
-      }
-    } else {
-      setState(() => loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final displayTx = fullTx != null ? (fullTx!['parsed_tx'] ?? fullTx!) : widget.initialTx;
-    final meta = fullTx ?? widget.initialTx;
-    final hash = displayTx['hash'] ?? displayTx['tx_hash'] ?? widget.initialTx['hash'] ?? '';
-    final direction = widget.initialTx['direction'] ?? 'IN';
-    final isIn = direction == 'IN';
-    final amountStr = displayTx['amount'] ?? '0';
-    double amt = double.tryParse(amountStr.toString()) ?? 0.0;
-    final status = meta['status'] ?? 'Unknown';
-
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.black, width: 1)),
-      ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Row(
-              children: [
-                const Text(
-                  'TRANSACTION',
-                  style: TextStyle(
-                    fontFamily: 'Helvetica Neue',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 3,
-                    color: Colors.black,
-                  ),
+            child: ctrl.history.isEmpty
+              ? const Center(child: Text('NO TRANSACTIONS', style: TextStyle(color: Colors.grey)))
+              : ListView.builder(
+                  itemCount: ctrl.history.length,
+                  itemBuilder: (_, i) {
+                    final tx = ctrl.history[i];
+                    final isIn = tx['direction'] == 'IN';
+                    final amt = double.tryParse(tx['amount'].toString()) ?? 0;
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE)))),
+                      child: Row(children: [
+                        Container(width: 36, height: 36, decoration: BoxDecoration(border: Border.all(color: Colors.black)),
+                          child: Icon(isIn ? Icons.arrow_downward : Icons.arrow_upward, size: 16)),
+                        const SizedBox(width: 12),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(isIn ? 'RECEIVED' : 'SENT', style: const TextStyle(fontWeight: FontWeight.w700)),
+                          Text('${(tx['hash'] ?? '').toString().substring(0, 12)}...', style: const TextStyle(fontFamily: 'Courier New', fontSize: 10, color: Colors.grey)),
+                        ])),
+                        Text('${isIn ? '+' : '-'}${amt.toStringAsFixed(2)} OCT', style: TextStyle(fontWeight: FontWeight.w600, color: isIn ? Colors.green : Colors.black)),
+                      ]),
+                    );
+                  },
                 ),
-                const Spacer(),
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: const Icon(Icons.close, size: 20, color: Colors.black),
-                ),
-              ],
-            ),
-            
-            const SizedBox(height: 24),
-            
-            if (loading)
-              const CupertinoActivityIndicator()
-            else ...[
-              // Amount
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.black, width: 1),
-                ),
-                child: Icon(
-                  isIn ? Icons.arrow_downward : Icons.arrow_upward,
-                  size: 24,
-                  color: Colors.black,
-                ),
-              ),
-              
-              const SizedBox(height: 16),
-              
-              Text(
-                '${isIn ? '+' : '-'}${amt.toStringAsFixed(6)} OCT',
-                style: const TextStyle(
-                  fontFamily: 'Helvetica Neue',
-                  fontSize: 28,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black,
-                ),
-              ),
-              
-              const SizedBox(height: 8),
-              
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.black, width: 1),
-                ),
-                child: Text(
-                  status.toString().toUpperCase(),
-                  style: const TextStyle(
-                    fontFamily: 'Helvetica Neue',
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-              
-              const SizedBox(height: 24),
-              
-              _buildDetailRow('FROM', displayTx['from'] ?? ''),
-              _buildDetailRow('TO', displayTx['to'] ?? displayTx['to_'] ?? ''),
-              _buildDetailRow('HASH', hash),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    if (value.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 60,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontFamily: 'Helvetica Neue',
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1,
-                color: Color(0xFF666666),
-              ),
-            ),
-          ),
-          Expanded(
-            child: GestureDetector(
-              onTap: () => Clipboard.setData(ClipboardData(text: value)),
-              child: Text(
-                value.length > 24 ? '${value.substring(0, 12)}...${value.substring(value.length - 8)}' : value,
-                style: const TextStyle(
-                  fontFamily: 'Courier New',
-                  fontSize: 11,
-                  color: Colors.black,
-                ),
-              ),
-            ),
           ),
         ],
       ),
@@ -1398,193 +475,185 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
 }
 
 // ============================================================================
-// TRANSACTION FORM (Shared)
+// SETTINGS TAB
 // ============================================================================
-
-void _showTransactionForm(
-  BuildContext context, {
-  required String title,
-  required String buttonText,
-  bool isPublic = false,
-  bool isEncrypt = false,
-  bool isDecrypt = false,
-  bool isPrivateTransfer = false,
-  String? prefillAddress,
-}) {
-  showCupertinoModalPopup(
-    context: context,
-    builder: (context) => _TransactionFormSheet(
-      title: title,
-      buttonText: buttonText,
-      isPublic: isPublic,
-      isEncrypt: isEncrypt,
-      isDecrypt: isDecrypt,
-      isPrivateTransfer: isPrivateTransfer,
-      prefillAddress: prefillAddress,
-    ),
-  );
-}
-
-class _TransactionFormSheet extends StatefulWidget {
-  final String title;
-  final String buttonText;
-  final bool isPublic;
-  final bool isEncrypt;
-  final bool isDecrypt;
-  final bool isPrivateTransfer;
-  final String? prefillAddress;
-
-  const _TransactionFormSheet({
-    required this.title,
-    required this.buttonText,
-    this.isPublic = false,
-    this.isEncrypt = false,
-    this.isDecrypt = false,
-    this.isPrivateTransfer = false,
-    this.prefillAddress,
-  });
-
-  @override
-  State<_TransactionFormSheet> createState() => _TransactionFormSheetState();
-}
-
-class _TransactionFormSheetState extends State<_TransactionFormSheet> {
-  final TextEditingController _addressController = TextEditingController();
-  final TextEditingController _amountController = TextEditingController();
-  bool _isLoading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.prefillAddress != null) {
-      _addressController.text = widget.prefillAddress!;
-    }
-  }
-
+class SettingsTab extends StatelessWidget {
+  const SettingsTab({super.key});
   @override
   Widget build(BuildContext context) {
-    final needsAddress = widget.isPublic || widget.isPrivateTransfer;
-    
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.6,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.black, width: 1)),
-      ),
+    final ctrl = context.read<WalletController>();
+    return SafeArea(
       child: Column(
         children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.black, width: 1)),
-            ),
-            child: Row(
+          Container(padding: const EdgeInsets.all(16), decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black))),
+            child: const Row(children: [Text('SETTINGS', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 2))])),
+          Expanded(
+            child: ListView(
               children: [
-                Text(
-                  widget.title,
-                  style: const TextStyle(
-                    fontFamily: 'Helvetica Neue',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 3,
-                    color: Colors.black,
-                  ),
-                ),
-                const Spacer(),
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: const Icon(Icons.close, size: 20, color: Colors.black),
-                ),
+                _settingItem('SECURITY & BIOMETRICS', CupertinoIcons.lock_shield, () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const SecurityPage()))),
+                _settingItem('EXPORT WALLET', CupertinoIcons.square_arrow_up, () => _exportWallet(context, ctrl)),
+                _settingItem('ABOUT', CupertinoIcons.info, () => _showAbout(context)),
+                const Divider(),
+                Padding(padding: const EdgeInsets.all(20), child: Center(child: GestureDetector(
+                  onTap: () => launchUrl(Uri.parse('https://x.com/glaqzz')),
+                  child: const Text('DEVELOPED BY @GLAQZZ', style: TextStyle(fontFamily: 'Courier New', fontSize: 10, color: Colors.grey, letterSpacing: 1)),
+                ))),
               ],
             ),
           ),
-          
+        ],
+      ),
+    );
+  }
+
+  Widget _settingItem(String label, IconData icon, VoidCallback onTap) => ListTile(leading: Icon(icon, size: 20), title: Text(label, style: const TextStyle(letterSpacing: 1)), trailing: const Icon(Icons.chevron_right, size: 18), onTap: onTap);
+
+  void _exportWallet(BuildContext ctx, WalletController ctrl) {
+    final w = ctrl.currentWallet;
+    if (w == null) return;
+    showCupertinoDialog(context: ctx, builder: (_) => CupertinoAlertDialog(
+      title: const Text('EXPORT WALLET'),
+      content: Column(children: [
+        const SizedBox(height: 16),
+        if (w.mnemonic != null && w.mnemonic!.isNotEmpty) ...[const Text('SEED PHRASE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)), const SizedBox(height: 8), SelectableText(w.mnemonic!, style: const TextStyle(fontSize: 11)), const SizedBox(height: 16)],
+        const Text('PRIVATE KEY', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        SelectableText(w.privateKeyBase64, style: const TextStyle(fontSize: 9)),
+      ]),
+      actions: [
+        CupertinoDialogAction(child: const Text('COPY SEED'), onPressed: () { if (w.mnemonic != null) Clipboard.setData(ClipboardData(text: w.mnemonic!)); Navigator.pop(ctx); }),
+        CupertinoDialogAction(child: const Text('CLOSE'), onPressed: () => Navigator.pop(ctx)),
+      ],
+    ));
+  }
+
+  void _showAbout(BuildContext ctx) => showCupertinoDialog(context: ctx, builder: (_) => CupertinoAlertDialog(
+    title: const Text('OCTRA WALLET'),
+    content: const Column(children: [SizedBox(height: 16), Text('Built by ouqro.tech'), Text('Developer: @glaqzz'), SizedBox(height: 8), Text('v1.0.0', style: TextStyle(fontSize: 12, color: Colors.grey))]),
+    actions: [CupertinoDialogAction(child: const Text('CLOSE'), onPressed: () => Navigator.pop(ctx))],
+  ));
+}
+
+// ============================================================================
+// SECURITY PAGE - Biometrics / PIN
+// ============================================================================
+class SecurityPage extends StatefulWidget {
+  const SecurityPage({super.key});
+  @override
+  State<SecurityPage> createState() => _SecurityPageState();
+}
+
+class _SecurityPageState extends State<SecurityPage> {
+  final _auth = LocalAuthentication();
+  bool _canBiometric = false;
+  bool _biometricEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometric();
+  }
+
+  Future<void> _checkBiometric() async {
+    try {
+      _canBiometric = await _auth.canCheckBiometrics || await _auth.isDeviceSupported();
+      setState(() {});
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoPageScaffold(
+      backgroundColor: Colors.white,
+      navigationBar: const CupertinoNavigationBar(middle: Text('SECURITY'), backgroundColor: Colors.white),
+      child: SafeArea(
+        child: ListView(
+          children: [
+            ListTile(
+              leading: const Icon(CupertinoIcons.lock),
+              title: const Text('CHANGE PIN'),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const PinScreen(isSetup: true))),
+            ),
+            if (_canBiometric)
+              SwitchListTile(
+                secondary: const Icon(CupertinoIcons.hand_raised),
+                title: const Text('BIOMETRICS'),
+                subtitle: const Text('Fingerprint / Face ID', style: TextStyle(fontSize: 12)),
+                value: _biometricEnabled,
+                onChanged: (v) async {
+                  if (v) {
+                    final ok = await _auth.authenticate(localizedReason: 'Enable biometric login');
+                    if (ok) setState(() => _biometricEnabled = true);
+                  } else {
+                    setState(() => _biometricEnabled = false);
+                  }
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// TRANSACTION FORM
+// ============================================================================
+void _showTxForm(BuildContext context, {required String title, bool isPublic = false, bool isEncrypt = false, bool isDecrypt = false, bool isPrivate = false, String? prefill}) {
+  showCupertinoModalPopup(context: context, builder: (_) => _TxFormSheet(title: title, isPublic: isPublic, isEncrypt: isEncrypt, isDecrypt: isDecrypt, isPrivate: isPrivate, prefill: prefill));
+}
+
+class _TxFormSheet extends StatefulWidget {
+  final String title;
+  final bool isPublic, isEncrypt, isDecrypt, isPrivate;
+  final String? prefill;
+  const _TxFormSheet({required this.title, this.isPublic = false, this.isEncrypt = false, this.isDecrypt = false, this.isPrivate = false, this.prefill});
+  @override
+  State<_TxFormSheet> createState() => _TxFormSheetState();
+}
+
+class _TxFormSheetState extends State<_TxFormSheet> {
+  final _addrCtrl = TextEditingController();
+  final _amtCtrl = TextEditingController();
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.prefill != null) _addrCtrl.text = widget.prefill!;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final needsAddr = widget.isPublic || widget.isPrivate;
+    return Container(
+      height: 400, color: Colors.white,
+      child: Column(
+        children: [
+          Container(padding: const EdgeInsets.all(16), decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black))),
+            child: Row(children: [Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 2)), const Spacer(), GestureDetector(onTap: () => Navigator.pop(context), child: const Icon(Icons.close))])),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (needsAddress) ...[
-                    const Text(
-                      'RECIPIENT ADDRESS',
-                      style: TextStyle(
-                        fontFamily: 'Helvetica Neue',
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1,
-                        color: Color(0xFF666666),
-                      ),
-                    ),
+                  if (needsAddr) ...[
+                    const Text('ADDRESS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.black, width: 1),
-                      ),
-                      child: CupertinoTextField(
-                        controller: _addressController,
-                        placeholder: 'Enter address',
-                        padding: const EdgeInsets.all(16),
-                        decoration: null,
-                        style: const TextStyle(fontFamily: 'Courier New', fontSize: 12),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
+                    Container(decoration: BoxDecoration(border: Border.all(color: Colors.black)), child: CupertinoTextField(controller: _addrCtrl, placeholder: 'Recipient address', padding: const EdgeInsets.all(12), decoration: null)),
+                    const SizedBox(height: 16),
                   ],
-                  
-                  const Text(
-                    'AMOUNT',
-                    style: TextStyle(
-                      fontFamily: 'Helvetica Neue',
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1,
-                      color: Color(0xFF666666),
-                    ),
-                  ),
+                  const Text('AMOUNT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.black, width: 1),
-                    ),
-                    child: CupertinoTextField(
-                      controller: _amountController,
-                      placeholder: '0.00',
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      padding: const EdgeInsets.all(16),
-                      decoration: null,
-                      style: const TextStyle(fontFamily: 'Helvetica Neue', fontSize: 24, fontWeight: FontWeight.w500),
-                      suffix: const Padding(
-                        padding: EdgeInsets.only(right: 16),
-                        child: Text('OCT', style: TextStyle(fontSize: 14, color: Color(0xFF666666))),
-                      ),
-                    ),
-                  ),
-                  
+                  Container(decoration: BoxDecoration(border: Border.all(color: Colors.black)), child: CupertinoTextField(controller: _amtCtrl, placeholder: '0.00', keyboardType: const TextInputType.numberWithOptions(decimal: true), padding: const EdgeInsets.all(12), decoration: null)),
                   const Spacer(),
-                  
-                  // Submit Button
                   GestureDetector(
-                    onTap: _isLoading ? null : _submit,
+                    onTap: _loading ? null : _submit,
                     child: Container(
-                      width: double.infinity,
-                      height: 56,
-                      decoration: const BoxDecoration(color: Colors.black),
-                      child: Center(
-                        child: _isLoading
-                            ? const CupertinoActivityIndicator(color: Colors.white)
-                            : Text(
-                                widget.buttonText,
-                                style: const TextStyle(
-                                  fontFamily: 'Helvetica Neue',
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 1.5,
-                                  color: Colors.white,
-                                ),
-                              ),
-                      ),
+                      width: double.infinity, height: 48, color: Colors.black,
+                      child: Center(child: _loading ? const CupertinoActivityIndicator(color: Colors.white) : Text('CONFIRM', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, letterSpacing: 1))),
                     ),
                   ),
                 ],
@@ -1597,240 +666,31 @@ class _TransactionFormSheetState extends State<_TransactionFormSheet> {
   }
 
   Future<void> _submit() async {
-    final walletCtrl = context.read<WalletController>();
-    final amount = double.tryParse(_amountController.text) ?? 0;
-    final address = _addressController.text.trim();
-    
-    if (amount <= 0) {
-      _showError('Invalid amount');
-      return;
-    }
-    
-    if ((widget.isPublic || widget.isPrivateTransfer) && address.isEmpty) {
-      _showError('Address required');
-      return;
-    }
-    
-    setState(() => _isLoading = true);
-    
+    final ctrl = context.read<WalletController>();
+    final amt = double.tryParse(_amtCtrl.text) ?? 0;
+    if (amt <= 0) return;
+    final addr = _addrCtrl.text.trim();
+    if ((widget.isPublic || widget.isPrivate) && addr.isEmpty) return;
+
+    setState(() => _loading = true);
     try {
-      RpcResponse? res;
-      bool success = false;
-      
-      if (widget.isPublic) {
-        res = await walletCtrl.sendTransaction(address, amount, null);
-        success = res.statusCode == 200;
-      } else if (widget.isEncrypt) {
-        res = await walletCtrl.encryptMoney(amount);
-        success = res.statusCode == 200;
-      } else if (widget.isDecrypt) {
-        res = await walletCtrl.decryptMoney(amount);
-        success = res.statusCode == 200;
-      } else if (widget.isPrivateTransfer) {
-        res = await walletCtrl.makePrivateTransfer(address, amount);
-        success = res.statusCode == 200;
-      }
-      
-      if (mounted) {
-        Navigator.pop(context);
-        if (success) {
-          await walletCtrl.refresh();
-          Navigator.of(context).push(
-            CupertinoPageRoute(builder: (_) => SuccessAnimation(message: '${widget.title} Successful')),
-          );
-        } else {
-          _showError(res?.body ?? 'Transaction failed');
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        _showError(e.toString());
+      RpcResponse res;
+      if (widget.isPublic) res = await ctrl.sendTransaction(addr, amt, null);
+      else if (widget.isEncrypt) res = await ctrl.encryptMoney(amt);
+      else if (widget.isDecrypt) res = await ctrl.decryptMoney(amt);
+      else res = await ctrl.makePrivateTransfer(addr, amt);
+
+      Navigator.pop(context);
+      if (res.statusCode == 200) {
+        await ctrl.refresh();
+        Navigator.of(context).push(CupertinoPageRoute(builder: (_) => SuccessAnimation(message: '${widget.title} Success')));
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
-
-
-  void _showError(String message) {
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('ERROR'),
-        content: Text(message),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('OK'),
-            onPressed: () => Navigator.pop(ctx),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-// ============================================================================
-// SECURITY SETTINGS PAGE
-// ============================================================================
-
-class SecuritySettingsPage extends StatelessWidget {
-  const SecuritySettingsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      backgroundColor: Colors.white,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: Colors.white,
-        border: const Border(bottom: BorderSide(color: Colors.black, width: 1)),
-        middle: const Text(
-          'SECURITY',
-          style: TextStyle(
-            fontFamily: 'Helvetica Neue',
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 3,
-            color: Colors.black,
-          ),
-        ),
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: const Icon(Icons.arrow_back, color: Colors.black, size: 20),
-        ),
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildSecurityOption(
-                'CHANGE PIN',
-                Icons.lock_outline,
-                () => Navigator.of(context).push(
-                  CupertinoPageRoute(builder: (_) => const PinScreen(isSetup: true)),
-                ),
-              ),
-              _buildSecurityOption(
-                'BIOMETRICS',
-                Icons.fingerprint,
-                () {},
-              ),
-              _buildSecurityOption(
-                'AUTO-LOCK',
-                Icons.timer_outlined,
-                () {},
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSecurityOption(String label, IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE), width: 1)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: Colors.black),
-            const SizedBox(width: 16),
-            Text(
-              label,
-              style: const TextStyle(
-                fontFamily: 'Helvetica Neue',
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1,
-                color: Colors.black,
-              ),
-            ),
-            const Spacer(),
-            const Icon(Icons.arrow_forward_ios, size: 12, color: Color(0xFF999999)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// Legacy aliases for compatibility
-class DashboardTab extends StatelessWidget {
-  const DashboardTab({super.key});
-  @override
-  Widget build(BuildContext context) => const WalletTab();
-}
-
-class PrivateTab extends StatelessWidget {
-  const PrivateTab({super.key});
-  @override
-  Widget build(BuildContext context) => const EncryptTab();
-}
-
-class HistoryTab extends StatelessWidget {
-  const HistoryTab({super.key});
-  @override
-  Widget build(BuildContext context) => const KeysTab();
-}
-
-// Edit Wallet Sheet (kept for compatibility)
-class _EditWalletSheet extends StatelessWidget {
-  final Wallet wallet;
-  const _EditWalletSheet({required this.wallet});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.black, width: 1)),
-      ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'EDIT WALLET',
-              style: TextStyle(
-                fontFamily: 'Helvetica Neue',
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 3,
-                color: Colors.black,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(wallet.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text(wallet.address, style: const TextStyle(fontSize: 10, color: Color(0xFF666666))),
-            const SizedBox(height: 24),
-            GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 1)),
-                child: const Text(
-                  'CLOSE',
-                  style: TextStyle(
-                    fontFamily: 'Helvetica Neue',
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.5,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// Legacy aliases
+class DashboardTab extends StatelessWidget { const DashboardTab({super.key}); @override Widget build(BuildContext context) => const WalletTab(); }
+class PrivateTab extends StatelessWidget { const PrivateTab({super.key}); @override Widget build(BuildContext context) => const EncryptTab(); }

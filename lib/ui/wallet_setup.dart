@@ -2,26 +2,25 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors, Icons;
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../wallet.dart';
 import 'home.dart';
 
 // ============================================================================
-// SWISS MINIMALIST WALLET SETUP
+// WALLET SETUP - Swiss Minimalist
+// Developer: @glaqzz
 // ============================================================================
 
 class WalletSetupPage extends StatefulWidget {
   const WalletSetupPage({super.key});
-
   @override
   State<WalletSetupPage> createState() => _WalletSetupPageState();
 }
 
 class _WalletSetupPageState extends State<WalletSetupPage> {
-  bool _isImporting = false;
-  bool _isLoading = false;
-  final TextEditingController _seedController = TextEditingController();
+  bool _importing = false;
+  bool _loading = false;
+  final _seedCtrl = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -32,129 +31,70 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
           children: [
             // Header
             Container(
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: Colors.black, width: 1)),
-              ),
-              height: 70,
-              child: const Row(
-                children: [
-                  Text(
-                    'OCTRA',
-                    style: TextStyle(
-                      fontFamily: 'Helvetica Neue',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 3,
-                      color: Colors.black,
-                    ),
-                  ),
-                ],
-              ),
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black))),
+              child: const Row(children: [Text('OCTRA', style: TextStyle(fontFamily: 'Helvetica Neue', fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 3))]),
             ),
             
-            // Content
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(24),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     // Logo
                     Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.black, width: 2),
-                      ),
-                      child: const Icon(Icons.account_balance_wallet_outlined, size: 40, color: Colors.black),
-                    ).animate().scale(duration: 600.ms, curve: Curves.easeOutBack),
+                      width: 80, height: 80,
+                      decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 2)),
+                      child: const Icon(Icons.account_balance_wallet_outlined, size: 36),
+                    ).animate().scale(duration: 500.ms, curve: Curves.easeOutBack),
                     
                     const SizedBox(height: 32),
                     
-                    // Title
-                    const Text(
-                      'OCTRA WALLET',
-                      style: TextStyle(
-                        fontFamily: 'Helvetica Neue',
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 4,
-                        color: Colors.black,
-                      ),
-                    ).animate().fadeIn().slideY(begin: 0.1, end: 0),
+                    const Text('OCTRA WALLET', style: TextStyle(fontFamily: 'Helvetica Neue', fontSize: 24, fontWeight: FontWeight.w700, letterSpacing: 4))
+                        .animate().fadeIn(),
                     
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     
-                    const Text(
-                      'SECURE · PRIVATE · FAST',
-                      style: TextStyle(
-                        fontFamily: 'Helvetica Neue',
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: 2,
-                        color: Color(0xFF666666),
-                      ),
-                    ).animate().fadeIn(delay: 200.ms),
+                    const Text('SECURE · PRIVATE · FAST', style: TextStyle(fontFamily: 'Helvetica Neue', fontSize: 11, letterSpacing: 2, color: Colors.grey))
+                        .animate().fadeIn(delay: 100.ms),
                     
                     const SizedBox(height: 48),
                     
-                    if (_isImporting) ...[
-                      // Import Form
+                    if (_importing) ...[
                       Container(
                         width: double.infinity,
-                        constraints: const BoxConstraints(maxWidth: 340),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'SEED PHRASE',
-                              style: TextStyle(
-                                fontFamily: 'Helvetica Neue',
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 1,
-                                color: Color(0xFF666666),
-                              ),
-                            ),
+                            const Text('SEED PHRASE OR PRIVATE KEY', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
                             const SizedBox(height: 8),
                             Container(
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.black, width: 1),
-                              ),
+                              decoration: BoxDecoration(border: Border.all(color: Colors.black)),
                               child: CupertinoTextField(
-                                controller: _seedController,
-                                placeholder: 'Enter 12 or 24 word seed phrase',
-                                padding: const EdgeInsets.all(16),
+                                controller: _seedCtrl,
+                                placeholder: 'Enter 12/24 words or base64 key',
                                 maxLines: 4,
+                                padding: const EdgeInsets.all(12),
                                 decoration: null,
                                 style: const TextStyle(fontFamily: 'Courier New', fontSize: 12),
                               ),
                             ),
-                            const SizedBox(height: 24),
-                            _buildButton('IMPORT WALLET', true, _importWallet),
+                            const SizedBox(height: 20),
+                            _buildBtn('IMPORT', true, _import),
                             const SizedBox(height: 12),
-                            _buildButton('BACK', false, () => setState(() => _isImporting = false)),
+                            _buildBtn('BACK', false, () => setState(() => _importing = false)),
                           ],
                         ),
                       ).animate().fadeIn(),
                     ] else ...[
-                      // Main Options
-                      Container(
-                        width: double.infinity,
-                        constraints: const BoxConstraints(maxWidth: 340),
-                        child: Column(
-                          children: [
-                            _buildButton('CREATE NEW WALLET', true, _createWallet),
-                            const SizedBox(height: 16),
-                            _buildButton('IMPORT EXISTING', false, () => setState(() => _isImporting = true)),
-                          ],
-                        ),
-                      ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.1, end: 0),
+                      _buildBtn('CREATE NEW WALLET', true, _create).animate().fadeIn(delay: 200.ms),
+                      const SizedBox(height: 12),
+                      _buildBtn('IMPORT EXISTING', false, () => setState(() => _importing = true)).animate().fadeIn(delay: 300.ms),
                     ],
                     
-                    if (_isLoading) ...[
-                      const SizedBox(height: 32),
+                    if (_loading) ...[
+                      const SizedBox(height: 24),
                       const CupertinoActivityIndicator(),
                     ],
                   ],
@@ -162,18 +102,10 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
               ),
             ),
             
-            // Footer
-            Container(
-              padding: const EdgeInsets.all(20),
-              child: const Text(
-                'BY XYNTERA',
-                style: TextStyle(
-                  fontFamily: 'Courier New',
-                  fontSize: 9,
-                  letterSpacing: 1,
-                  color: Color(0xFF999999),
-                ),
-              ),
+            // Footer Credit
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: const Text('DEV @GLAQZZ', style: TextStyle(fontFamily: 'Courier New', fontSize: 9, color: Colors.grey, letterSpacing: 1)),
             ),
           ],
         ),
@@ -181,44 +113,34 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
     );
   }
 
-  Widget _buildButton(String label, bool isPrimary, VoidCallback onTap) {
+  Widget _buildBtn(String label, bool primary, VoidCallback onTap) {
     return GestureDetector(
-      onTap: _isLoading ? null : onTap,
+      onTap: _loading ? null : onTap,
       child: Container(
-        width: double.infinity,
-        height: 56,
+        width: double.infinity, height: 56,
         decoration: BoxDecoration(
-          color: isPrimary ? Colors.black : Colors.white,
-          border: Border.all(color: Colors.black, width: 1),
+          color: primary ? Colors.black : Colors.white,
+          border: Border.all(color: Colors.black),
         ),
         child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontFamily: 'Helvetica Neue',
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.5,
-              color: isPrimary ? Colors.white : Colors.black,
-            ),
-          ),
+          child: Text(label, style: TextStyle(
+            fontFamily: 'Helvetica Neue',
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.5,
+            color: primary ? Colors.white : Colors.black,
+          )),
         ),
       ),
     );
   }
 
-  Future<void> _createWallet() async {
-    setState(() => _isLoading = true);
+  Future<void> _create() async {
+    setState(() => _loading = true);
     try {
-      final walletCtrl = context.read<WalletController>();
-      // Generate wallet data
-      final walletData = await walletCtrl.generateNewWalletData();
-      // Add wallet to storage
-      await walletCtrl.addWallet(
-        walletData['address']!,
-        walletData['privateKeyBase64']!,
-        walletData['mnemonic'],
-      );
+      final ctrl = context.read<WalletController>();
+      final data = await ctrl.generateNewWalletData();
+      await ctrl.addWallet(data['address']!, data['privateKeyBase64']!, data['mnemonic']);
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
           CupertinoPageRoute(builder: (_) => const HomeTabScaffold()),
@@ -228,32 +150,26 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
     } catch (e) {
       _showError(e.toString());
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _importWallet() async {
-    final seed = _seedController.text.trim();
-    if (seed.isEmpty) {
-      _showError('Please enter your seed phrase');
+  Future<void> _import() async {
+    final input = _seedCtrl.text.trim();
+    if (input.isEmpty) {
+      _showError('Please enter seed phrase or private key');
       return;
     }
     
-    setState(() => _isLoading = true);
+    setState(() => _loading = true);
     try {
-      final walletCtrl = context.read<WalletController>();
-      // Process input (seed phrase or private key)
-      final walletData = await walletCtrl.processInput(seed);
-      if (walletData == null) {
-        _showError('Invalid seed phrase or private key');
+      final ctrl = context.read<WalletController>();
+      final data = await ctrl.processInput(input);
+      if (data == null) {
+        _showError('Invalid input');
         return;
       }
-      // Add wallet to storage
-      await walletCtrl.addWallet(
-        walletData['address']!,
-        walletData['privateKeyBase64']!,
-        walletData['mnemonic']?.isEmpty == true ? null : walletData['mnemonic'],
-      );
+      await ctrl.addWallet(data['address']!, data['privateKeyBase64']!, data['mnemonic']?.isEmpty == true ? null : data['mnemonic']);
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
           CupertinoPageRoute(builder: (_) => const HomeTabScaffold()),
@@ -263,24 +179,16 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
     } catch (e) {
       _showError(e.toString());
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-
-  void _showError(String message) {
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('ERROR'),
-        content: Text(message),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('OK'),
-            onPressed: () => Navigator.pop(ctx),
-          ),
-        ],
-      ),
-    );
-  }
+  void _showError(String msg) => showCupertinoDialog(
+    context: context,
+    builder: (_) => CupertinoAlertDialog(
+      title: const Text('ERROR'),
+      content: Text(msg),
+      actions: [CupertinoDialogAction(child: const Text('OK'), onPressed: () => Navigator.pop(context))],
+    ),
+  );
 }

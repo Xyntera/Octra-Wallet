@@ -1,5 +1,5 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Colors, Icons, Scaffold;
+import 'package:flutter/material.dart' show Colors, Icons, Scaffold, ListTile, Divider, SelectableText, SwitchListTile;
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -573,7 +573,7 @@ class _SecurityPageState extends State<SecurityPage> {
               leading: const Icon(CupertinoIcons.lock),
               title: const Text('CHANGE PIN'),
               trailing: const Icon(Icons.chevron_right, size: 18),
-              onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const PinScreen(isSetup: true))),
+              onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const PinScreen(isSettingPin: true))),
             ),
             if (_canBiometric)
               SwitchListTile(
@@ -683,7 +683,7 @@ class _TxFormSheetState extends State<_TxFormSheet> {
       Navigator.pop(context);
       if (res.statusCode == 200) {
         await ctrl.refresh();
-        Navigator.of(context).push(CupertinoPageRoute(builder: (_) => SuccessAnimation(message: '${widget.title} Success')));
+        Navigator.of(context).push(CupertinoPageRoute(builder: (_) => SuccessAnimation(onComplete: () => Navigator.pop(context))));
       }
     } finally {
       if (mounted) setState(() => _loading = false);

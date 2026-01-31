@@ -1,12 +1,15 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/material.dart' show Colors, Icons;
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../wallet.dart';
 import 'home.dart';
-import 'success_animation.dart';
+
+// ============================================================================
+// SWISS MINIMALIST WALLET SETUP
+// ============================================================================
 
 class WalletSetupPage extends StatefulWidget {
   const WalletSetupPage({super.key});
@@ -16,147 +19,187 @@ class WalletSetupPage extends StatefulWidget {
 }
 
 class _WalletSetupPageState extends State<WalletSetupPage> {
-  final TextEditingController _importController = TextEditingController();
   bool _isImporting = false;
   bool _isLoading = false;
-  Map<String, String>? _generatedData;
+  final TextEditingController _seedController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
-    // If we have generated data, show the backup screen
-    if (_generatedData != null) {
-      return _buildBackupScreen(context);
-    }
-
     return CupertinoPageScaffold(
-      child: Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFFF8F6F1), // Modern Light BG
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Spacer(),
-                const Icon(
-                  CupertinoIcons.circle_grid_hex,
-                  size: 80,
-                  color: const Color(0xFF111111),
-                ).animate().scale(duration: 600.ms, curve: Curves.easeOutBack).shimmer(delay: 1000.ms, duration: 1500.ms),
-                const SizedBox(height: 24),
-                Text(
-                  'Octra Wallet',
-                  style: GoogleFonts.inter(fontSize: 32, fontWeight: FontWeight.bold, color: const Color(0xFF111111)),
-                ).animate().fadeIn().moveY(begin: 10, end: 0).shimmer(delay: 1200.ms, color: const Color(0x3DFFFFFF)),
-                const SizedBox(height: 8),
-                Text(
-                  'Secure, Private, Fast.',
-                  style: GoogleFonts.inter(fontSize: 16, color: const Color(0xFF666666)),
-                ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2, end: 0),
-                const Spacer(),
-                
-                if (_isImporting) ...[
-                  CupertinoTextField(
-                    controller: _importController,
-                    placeholder: 'Seed Phrase or Private Key',
-                    maxLines: 3,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: CupertinoColors.systemGrey6.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
+      backgroundColor: Colors.white,
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Colors.black, width: 1)),
+              ),
+              height: 70,
+              child: const Row(
+                children: [
+                  Text(
+                    'OCTRA',
+                    style: TextStyle(
+                      fontFamily: 'Helvetica Neue',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 3,
+                      color: Colors.black,
                     ),
-                    style: GoogleFonts.inter(color: const Color(0xFF111111)),
-                  ).animate().fadeIn(),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: CupertinoButton(
-                          child: const Text('Cancel'),
-                          onPressed: () => setState(() => _isImporting = false),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: CupertinoButton.filled(
-                          onPressed: _isLoading ? null : () async {
-                            setState(() => _isLoading = true);
-                            await Future.delayed(300.ms); 
-                            final wallet = context.read<WalletController>();
-                            final data = await wallet.processInput(_importController.text);
-                            
-                            if (data != null) {
-                               await wallet.addWallet(data['address']!, data['privateKeyBase64']!, data['mnemonic']);
-                               
-                               if (!mounted) return;
-                               // Success Animation
-                               await Navigator.of(context).push(PageRouteBuilder(
-                                  opaque: false, 
-                                  pageBuilder: (_,__,___) => SuccessAnimation(onComplete: () => Navigator.pop(context))
-                               ));
-                               
-                               if (!mounted) return;
-                               if (Navigator.canPop(context)) {
-                                 Navigator.pop(context);
-                               } else {
-                                 Navigator.of(context).pushReplacement(
-                                   CupertinoPageRoute(builder: (_) => const HomeTabScaffold())
-                                 );
-                               }
-                            } else {
-                               setState(() => _isLoading = false);
-                               showCupertinoDialog(context: context, builder: (ctx) => CupertinoAlertDialog(
-                                 title: const Text("Invalid Input"),
-                                 content: const Text("Could not import wallet. Check your seed or key."),
-                                 actions: [CupertinoDialogAction(child: const Text("OK"), onPressed: () => Navigator.pop(ctx))],
-                               ));
-                            }
-                          },
-                          child: _isLoading ? const CupertinoActivityIndicator(color: CupertinoColors.white) : const Text('Import'),
-                        ),
-                      ),
-                    ],
                   ),
-                ] else ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: CupertinoButton.filled(
-                      onPressed: _isLoading ? null : () async {
-                        setState(() => _isLoading = true);
-                        await Future.delayed(600.ms); 
-                        final data = await context.read<WalletController>().generateNewWalletData();
-                        setState(() {
-                          _isLoading = false;
-                          _generatedData = data;
-                        });
-                      },
-                      child: _isLoading ? const CupertinoActivityIndicator(color: CupertinoColors.white) : Text('Create New Wallet', style: GoogleFonts.inter(color: const Color(0xFFF8F6F1))),
-                    ),
-                  ).animate().fadeIn(delay: 400.ms).moveY(begin: 20, end: 0),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: CupertinoButton(
-                      child: const Text('I have a wallet'),
-                      onPressed: () => setState(() => _isImporting = true),
-                    ),
-                  ).animate().fadeIn(delay: 500.ms).moveY(begin: 20, end: 0),
                 ],
-                const Spacer(),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: Text(
-                    "Made by ouqro.tech",
-                    style: GoogleFonts.outfit(
-                      color: CupertinoColors.systemGrey2, 
-                      fontSize: 12, 
-                      letterSpacing: 1.2
-                    ),
-                  ),
+              ),
+            ),
+            
+            // Content
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Logo
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.black, width: 2),
+                      ),
+                      child: const Icon(Icons.account_balance_wallet_outlined, size: 40, color: Colors.black),
+                    ).animate().scale(duration: 600.ms, curve: Curves.easeOutBack),
+                    
+                    const SizedBox(height: 32),
+                    
+                    // Title
+                    const Text(
+                      'OCTRA WALLET',
+                      style: TextStyle(
+                        fontFamily: 'Helvetica Neue',
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 4,
+                        color: Colors.black,
+                      ),
+                    ).animate().fadeIn().slideY(begin: 0.1, end: 0),
+                    
+                    const SizedBox(height: 12),
+                    
+                    const Text(
+                      'SECURE · PRIVATE · FAST',
+                      style: TextStyle(
+                        fontFamily: 'Helvetica Neue',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 2,
+                        color: Color(0xFF666666),
+                      ),
+                    ).animate().fadeIn(delay: 200.ms),
+                    
+                    const SizedBox(height: 48),
+                    
+                    if (_isImporting) ...[
+                      // Import Form
+                      Container(
+                        width: double.infinity,
+                        constraints: const BoxConstraints(maxWidth: 340),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'SEED PHRASE',
+                              style: TextStyle(
+                                fontFamily: 'Helvetica Neue',
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1,
+                                color: Color(0xFF666666),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.black, width: 1),
+                              ),
+                              child: CupertinoTextField(
+                                controller: _seedController,
+                                placeholder: 'Enter 12 or 24 word seed phrase',
+                                padding: const EdgeInsets.all(16),
+                                maxLines: 4,
+                                decoration: null,
+                                style: const TextStyle(fontFamily: 'Courier New', fontSize: 12),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            _buildButton('IMPORT WALLET', true, _importWallet),
+                            const SizedBox(height: 12),
+                            _buildButton('BACK', false, () => setState(() => _isImporting = false)),
+                          ],
+                        ),
+                      ).animate().fadeIn(),
+                    ] else ...[
+                      // Main Options
+                      Container(
+                        width: double.infinity,
+                        constraints: const BoxConstraints(maxWidth: 340),
+                        child: Column(
+                          children: [
+                            _buildButton('CREATE NEW WALLET', true, _createWallet),
+                            const SizedBox(height: 16),
+                            _buildButton('IMPORT EXISTING', false, () => setState(() => _isImporting = true)),
+                          ],
+                        ),
+                      ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.1, end: 0),
+                    ],
+                    
+                    if (_isLoading) ...[
+                      const SizedBox(height: 32),
+                      const CupertinoActivityIndicator(),
+                    ],
+                  ],
                 ),
-              ],
+              ),
+            ),
+            
+            // Footer
+            Container(
+              padding: const EdgeInsets.all(20),
+              child: const Text(
+                'BY XYNTERA',
+                style: TextStyle(
+                  fontFamily: 'Courier New',
+                  fontSize: 9,
+                  letterSpacing: 1,
+                  color: Color(0xFF999999),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildButton(String label, bool isPrimary, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: _isLoading ? null : onTap,
+      child: Container(
+        width: double.infinity,
+        height: 56,
+        decoration: BoxDecoration(
+          color: isPrimary ? Colors.black : Colors.white,
+          border: Border.all(color: Colors.black, width: 1),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontFamily: 'Helvetica Neue',
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.5,
+              color: isPrimary ? Colors.white : Colors.black,
             ),
           ),
         ),
@@ -164,118 +207,78 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
     );
   }
 
-  Widget _buildBackupScreen(BuildContext context) {
-    final mnemonic = _generatedData!['mnemonic']!;
-    final privKey = _generatedData!['privateKeyBase64']!;
-    final address = _generatedData!['address']!;
-
-    return CupertinoPageScaffold(
-      backgroundColor: const Color(0xFFF8F6F1),
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: const Color(0xFFEAE8E3),
-        middle: Text('Backup Wallet', style: GoogleFonts.inter(color: const Color(0xFF111111))),
-      ),
-      child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-             crossAxisAlignment: CrossAxisAlignment.start,
-             children: [
-               _buildWarningBox(),
-               const SizedBox(height: 24),
-               Text("Secret Phrase", style: GoogleFonts.outfit(color: CupertinoColors.systemGrey, fontSize: 14)),
-               const SizedBox(height: 8),
-               Container(
-                 padding: const EdgeInsets.all(16),
-                 decoration: BoxDecoration(
-                    color: const Color(0xFFEAE8E3),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(mnemonic, style: GoogleFonts.sourceCodePro(color: const Color(0xFF111111), fontSize: 16, height: 1.5)),
-               ),
-               const SizedBox(height: 8),
-               CupertinoButton(
-                 padding: EdgeInsets.zero,
-                 child: const Row(children: [Icon(CupertinoIcons.doc_on_doc), SizedBox(width: 8), Text("Copy Phrase")]),
-                 onPressed: () {
-                   Clipboard.setData(ClipboardData(text: mnemonic));
-                 },
-               ),
-               
-               const SizedBox(height: 24),
-               Text("Private Key", style: GoogleFonts.outfit(color: CupertinoColors.systemGrey, fontSize: 14)),
-               const SizedBox(height: 8),
-               Container(
-                 padding: const EdgeInsets.all(16),
-                 decoration: BoxDecoration(
-                   color: const Color(0xFF1C1C1E),
-                   borderRadius: BorderRadius.circular(12),
-                   border: Border.all(color: CupertinoColors.systemGrey.withOpacity(0.2)),
-                 ),
-                 child: Text(privKey, style: GoogleFonts.sourceCodePro(color: CupertinoColors.white, fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
-               ),
-               const SizedBox(height: 8),
-               CupertinoButton(
-                 padding: EdgeInsets.zero,
-                 child: const Row(children: [Icon(CupertinoIcons.doc_on_doc), SizedBox(width: 8), Text("Copy Private Key")]),
-                 onPressed: () {
-                   Clipboard.setData(ClipboardData(text: privKey));
-                 },
-               ),
-               
-               const SizedBox(height: 40),
-               SizedBox(
-                 width: double.infinity,
-                 child: CupertinoButton.filled(
-                    onPressed: _isLoading ? null : () async {
-                       setState(() => _isLoading = true);
-                       await Future.delayed(500.ms);
-                       await context.read<WalletController>().addWallet(address, privKey, mnemonic);
-                       
-                       if (!mounted) return;
-                       await Navigator.of(context).push(PageRouteBuilder(
-                          opaque: false, 
-                          pageBuilder: (_,__,___) => SuccessAnimation(onComplete: () => Navigator.pop(context))
-                       ));
-
-                       if (!mounted) return;
-                       if (Navigator.canPop(context)) {
-                         Navigator.pop(context);
-                       } else {
-                         Navigator.of(context).pushReplacement(
-                           CupertinoPageRoute(builder: (_) => const HomeTabScaffold())
-                         );
-                       }
-                    },
-                    child: _isLoading ? const CupertinoActivityIndicator(color: CupertinoColors.white) : const Text("I have saved it"),
-                 ),
-               ),
-               Center(
-                 child: CupertinoButton(
-                   child: const Text("Back"),
-                   onPressed: () => setState(() => _generatedData = null),
-                 ),
-               )
-             ],
-          ),
-        ),
-      ),
-    );
+  Future<void> _createWallet() async {
+    setState(() => _isLoading = true);
+    try {
+      final walletCtrl = context.read<WalletController>();
+      // Generate wallet data
+      final walletData = await walletCtrl.generateNewWalletData();
+      // Add wallet to storage
+      await walletCtrl.addWallet(
+        walletData['address']!,
+        walletData['privateKeyBase64']!,
+        walletData['mnemonic'],
+      );
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          CupertinoPageRoute(builder: (_) => const HomeTabScaffold()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
-  Widget _buildWarningBox() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.destructiveRed.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: CupertinoColors.destructiveRed.withOpacity(0.3)),
-      ),
-      child: Row(
-        children: [
-          const Icon(CupertinoIcons.exclamationmark_triangle_fill, color: CupertinoColors.destructiveRed),
-          const SizedBox(width: 16),
-          Expanded(child: Text("Your secret phrase is the only way to recover your funds. Write it down and keep it safe.", style: GoogleFonts.outfit(color: CupertinoColors.destructiveRed)))
+  Future<void> _importWallet() async {
+    final seed = _seedController.text.trim();
+    if (seed.isEmpty) {
+      _showError('Please enter your seed phrase');
+      return;
+    }
+    
+    setState(() => _isLoading = true);
+    try {
+      final walletCtrl = context.read<WalletController>();
+      // Process input (seed phrase or private key)
+      final walletData = await walletCtrl.processInput(seed);
+      if (walletData == null) {
+        _showError('Invalid seed phrase or private key');
+        return;
+      }
+      // Add wallet to storage
+      await walletCtrl.addWallet(
+        walletData['address']!,
+        walletData['privateKeyBase64']!,
+        walletData['mnemonic']?.isEmpty == true ? null : walletData['mnemonic'],
+      );
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          CupertinoPageRoute(builder: (_) => const HomeTabScaffold()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+
+  void _showError(String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('ERROR'),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.pop(ctx),
+          ),
         ],
       ),
     );

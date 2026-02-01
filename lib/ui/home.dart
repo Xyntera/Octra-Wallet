@@ -561,7 +561,12 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
               else if (isDecrypt) res = await ctrl.decryptMoney(amt);
               else res = await ctrl.makePrivateTransfer(addrCtrl.text.trim(), amt);
               Navigator.pop(ctx2);
-              if (res.statusCode == 200) { await ctrl.refresh(); Navigator.of(context).push(CupertinoPageRoute(builder: (_) => SuccessAnimation(onComplete: () => Navigator.pop(context)))); }
+              if (res.statusCode == 200) { 
+                Navigator.of(context).push(CupertinoPageRoute(builder: (_) => SuccessAnimation(
+                  request: ctrl.refresh(),
+                  onComplete: () => Navigator.pop(context),
+                ))); 
+              }
             },
             child: Container(width: double.infinity, padding: const EdgeInsets.all(18), color: _fg, child: Center(child: loading ? CupertinoActivityIndicator(color: _bg) : Text('CONFIRM', style: TextStyle(color: _bg, fontWeight: FontWeight.w700, letterSpacing: 1)))),
           ),

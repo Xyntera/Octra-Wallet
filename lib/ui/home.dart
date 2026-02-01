@@ -13,6 +13,7 @@ import 'wallet_setup.dart';
 import 'scanner.dart';
 import 'success_animation.dart';
 import 'pin_screen.dart';
+import 'legal_pages.dart';
 import 'owl_logo.dart';
 
 // ============================================================================
@@ -431,14 +432,59 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
   }
 
   void _showMenu(BuildContext ctx) {
-    showCupertinoModalPopup(context: ctx, builder: (_) => CupertinoActionSheet(
-      actions: [
-        CupertinoActionSheetAction(child: const Text('Security'), onPressed: () { Navigator.pop(ctx); Navigator.push(ctx, CupertinoPageRoute(builder: (_) => const PinScreen(isSettingPin: true))); }),
-        CupertinoActionSheetAction(child: const Text('Refresh'), onPressed: () { Navigator.pop(ctx); context.read<WalletController>().refresh(); }),
-        CupertinoActionSheetAction(child: const Text('Developer @glaqzz'), onPressed: () { Navigator.pop(ctx); launchUrl(Uri.parse('https://x.com/glaqzz')); }),
-      ],
-      cancelButton: CupertinoActionSheetAction(child: const Text('Cancel'), onPressed: () => Navigator.pop(ctx)),
-    ));
+    showCupertinoModalPopup(
+      context: ctx,
+      builder: (_) => CupertinoActionSheet(
+        actions: [
+          CupertinoActionSheetAction(
+            child: const Text('Security Settings', style: TextStyle(color: Colors.black)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(ctx, CupertinoPageRoute(builder: (_) => const PinScreen(isSettingPin: true)));
+            },
+          ),
+          CupertinoActionSheetAction(
+            child: const Text('Privacy Policy', style: TextStyle(color: Colors.black)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(ctx, CupertinoPageRoute(builder: (_) => const PrivacyPolicyPage()));
+            },
+          ),
+          CupertinoActionSheetAction(
+            child: const Text('Terms & Conditions', style: TextStyle(color: Colors.black)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(ctx, CupertinoPageRoute(builder: (_) => const TermsPage()));
+            },
+          ),
+          CupertinoActionSheetAction(
+            child: const Text('Website: octrawallet.app', style: TextStyle(color: Colors.black)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              launchUrl(Uri.parse('https://octrawallet.app'), mode: LaunchMode.externalApplication);
+            },
+          ),
+          CupertinoActionSheetAction(
+            child: const Text('Refresh Data', style: TextStyle(color: Colors.black)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.read<WalletController>().refresh();
+            },
+          ),
+          CupertinoActionSheetAction(
+            child: const Text('Developer @glaqzz', style: TextStyle(color: Colors.grey, fontSize: 12)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              launchUrl(Uri.parse('https://x.com/glaqzz'));
+            },
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          child: const Text('Cancel', style: TextStyle(color: Colors.red)),
+          onPressed: () => Navigator.pop(ctx),
+        ),
+      ),
+    );
   }
 
   void _showReceive(BuildContext ctx) {

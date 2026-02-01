@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import '../wallet.dart';
 import 'home.dart';
+import 'pin_screen.dart';
 
 // ============================================================================
 // WALLET SETUP - Swiss Minimalist
@@ -139,6 +140,17 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
     setState(() => _loading = true);
     try {
       final ctrl = context.read<WalletController>();
+      
+      // Force Security Setup
+      if (!await ctrl.isSecurityEnabled) {
+         final res = await Navigator.push(context, CupertinoPageRoute(builder: (_) => const PinScreen(isSettingPin: true)));
+         if (res != null && res is String) {
+           await ctrl.setPin(res);
+         } else {
+           return; // Cancelled
+         }
+      }
+
       final data = await ctrl.generateNewWalletData();
       await ctrl.addWallet(data['address']!, data['privateKeyBase64']!, data['mnemonic']);
       if (mounted) {
@@ -164,6 +176,19 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
     setState(() => _loading = true);
     try {
       final ctrl = context.read<WalletController>();
+
+      // Force Security Setup
+      if (!await ctrl.isSecurityEnabled) {
+         final res = await Navigator.push(context, CupertinoPageRoute(builder: (_) => const PinScreen(isSettingPin: true)));
+         if (res != null && res is String) {
+           await ctrl.setPin(res);
+         } else {
+           _loading = false; // Reset loading if cancelled
+           setState(() {});
+           return; // Cancelled
+         }
+      }
+
       final data = await ctrl.processInput(input);
       if (data == null) {
         _showError('Invalid input');

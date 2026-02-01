@@ -14,7 +14,7 @@ import 'scanner.dart';
 import 'success_animation.dart';
 import 'pin_screen.dart';
 import 'legal_pages.dart';
-import 'owl_logo.dart';
+import 'video_logo.dart';
 
 // ============================================================================
 // OCTRA WALLET - PREMIUM ANIMATED UI
@@ -89,8 +89,8 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
         child: Row(
           children: [
             // Animated Logo
-            // Animated Owl Logo
-            OwlLogo(color: _accent, size: 24),
+            // Animated Video Logo
+            VideoLogo(size: 30),
             const SizedBox(width: 12),
             GestureDetector(
               onTap: () => _showWalletPicker(context, ctrl),

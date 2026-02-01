@@ -36,6 +36,7 @@ dependencies:
   mobile_scanner: ^5.0.0
   local_auth: ^2.1.6
   url_launcher: ^6.2.1
+  video_player: ^2.8.6
 
   flutter_launcher_icons: "^0.13.1"
   flutter_native_splash: "^2.4.0"

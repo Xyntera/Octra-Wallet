@@ -7,6 +7,7 @@ import 'wallet.dart';
 import 'ui/wallet_setup.dart';
 import 'ui/home.dart';
 import 'ui/pin_screen.dart';
+import 'ui/video_logo.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -130,7 +131,7 @@ class _StartupCheckState extends State<StartupCheck> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(CupertinoIcons.circle_grid_hex, size: 80, color: Color(0xFF0A84FF)),
+              VideoLogo(size: 150, isSplash: true),
               SizedBox(height: 32),
               CupertinoActivityIndicator(color: Colors.white, radius: 14)
             ]

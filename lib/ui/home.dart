@@ -15,6 +15,7 @@ import 'success_animation.dart';
 import 'pin_screen.dart';
 import 'legal_pages.dart';
 import 'owl_logo.dart';
+import 'video_logo.dart';
 
 // ============================================================================
 // OCTRA WALLET - PREMIUM ANIMATED UI
@@ -88,26 +89,30 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
         bottom: false,
         child: Row(
           children: [
-            // Animated Logo
-            // Owl Logo (Static PNG)
-            OwlLogo(size: 36, color: _fg),
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTap: () => _showWalletPicker(context, ctrl),
-              child: Row(
-                children: [
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('OCTRA WALLET', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: _fg)),
-                      if (ctrl.currentWallet != null)
-                        Text(ctrl.currentWallet!.name.toUpperCase(), style: TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: _fg.withOpacity(0.5))),
-                    ],
-                  ),
-                  const SizedBox(width: 6),
-                  Icon(CupertinoIcons.chevron_down, size: 12, color: _fg.withOpacity(0.5)),
-                ],
+            // Animated Video Logo
+            const VideoLogo(size: 36),
+            const SizedBox(width: 8),
+            Expanded(
+              child: GestureDetector(
+                onTap: () => _showWalletPicker(context, ctrl),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('OCTRA WALLET', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1, color: _fg)),
+                          if (ctrl.currentWallet != null)
+                            Text(ctrl.currentWallet!.name.toUpperCase(), style: TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: _fg.withOpacity(0.5))),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(CupertinoIcons.chevron_down, size: 12, color: _fg.withOpacity(0.5)),
+                  ],
+                ),
               ),
             ),
             const Spacer(),

@@ -61,7 +61,7 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
         child: Column(
           children: [
             _buildHeader(),
-            Expanded(child: _tab == 0 ? _buildWalletTab() : _buildCryptTab()),
+            Expanded(child: _tab == 0 ? _buildWalletTab() : (_tab == 1 ? _buildCryptTab() : _buildHistoryTab())),
             _buildBottomTabs(),
             // Developer Credit
             Container(
@@ -324,12 +324,167 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
     );
   }
 
+  // ==================== HISTORY TAB ====================
+  Widget _buildHistoryTab() {
+    final ctrl = context.watch<WalletController>();
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('HISTORY', style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800, letterSpacing: -1, color: _fg)).animate().fadeIn().slideX(begin: -0.05),
+                const SizedBox(height: 8),
+                Text('TRANSACTION ACTIVITY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 2, color: _fg.withOpacity(0.4))).animate().fadeIn(delay: 100.ms),
+              ],
+            ),
+          ),
+          
+          if (ctrl.isLoading)
+            Center(child: Padding(
+              padding: const EdgeInsets.all(48),
+              child: CupertinoActivityIndicator(color: _fg),
+            ))
+          else if (ctrl.history.isEmpty)
+            Center(child: Padding(
+              padding: const EdgeInsets.all(48),
+              child: Column(
+                children: [
+                  Icon(CupertinoIcons.doc_text, size: 48, color: _fg.withOpacity(0.2)),
+                  const SizedBox(height: 16),
+                  Text('NO TRANSACTIONS', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1, color: _fg.withOpacity(0.4))),
+                ],
+              ),
+            ))
+          else
+            ...ctrl.history.map((tx) => _buildHistoryTile(tx)).toList(),
+          
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryTile(Map<String, dynamic> tx) {
+    final direction = tx['direction'] ?? 'OUT';
+    final isOut = direction == 'OUT';
+    final amount = double.tryParse(tx['amount']?.toString() ?? '0') ?? 0.0;
+    final hash = tx['hash'] ?? tx['tx_hash'] ?? '';
+    final from = tx['from'] ?? '';
+    final to = tx['to'] ?? '';
+    final status = tx['status'] ?? 'confirmed';
+    
+    // Status colors
+    Color statusColor = Colors.green;
+    String statusText = 'CONFIRMED';
+    IconData statusIcon = CupertinoIcons.checkmark_circle_fill;
+    
+    if (status == 'pending') {
+      statusColor = Colors.orange;
+      statusText = 'PENDING';
+      statusIcon = CupertinoIcons.clock_fill;
+    } else if (status == 'failed') {
+      statusColor = Colors.red;
+      statusText = 'FAILED';
+      statusIcon = CupertinoIcons.xmark_circle_fill;
+    }
+    
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: _fg.withOpacity(0.15)),
+        color: _bg,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              // Direction Icon
+              Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: (isOut ? Colors.red : Colors.green).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  isOut ? CupertinoIcons.arrow_up_right : CupertinoIcons.arrow_down_left,
+                  color: isOut ? Colors.red : Colors.green,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              
+              // Details
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isOut ? 'SENT' : 'RECEIVED',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 1, color: _fg),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isOut ? 'To: ${_shortAddress(to)}' : 'From: ${_shortAddress(from)}',
+                      style: TextStyle(fontSize: 10, color: _fg.withOpacity(0.5), fontFamily: 'Courier'),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Amount
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${isOut ? "-" : "+"}${amount.toStringAsFixed(4)}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: isOut ? Colors.red : Colors.green,
+                    ),
+                  ),
+                  Text('OCT', style: TextStyle(fontSize: 9, color: _fg.withOpacity(0.4))),
+                ],
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 12),
+          
+          // Status Row
+          Row(
+            children: [
+              Icon(statusIcon, size: 12, color: statusColor),
+              const SizedBox(width: 4),
+              Text(statusText, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: statusColor)),
+              const Spacer(),
+              if (hash.isNotEmpty)
+                Text('${hash.substring(0, 8)}...', style: TextStyle(fontSize: 9, color: _fg.withOpacity(0.3), fontFamily: 'Courier')),
+            ],
+          ),
+        ],
+      ),
+    ).animate().fadeIn().slideX(begin: 0.02);
+  }
+
+  String _shortAddress(String addr) {
+    if (addr.length < 12) return addr;
+    return '${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}';
+  }
+
   // ==================== BOTTOM TABS ====================
   Widget _buildBottomTabs() {
     return Container(
       height: 72,
       decoration: BoxDecoration(border: Border(top: BorderSide(color: _fg.withOpacity(_privateMode ? 0.1 : 1)))),
-      child: Row(children: [_buildTabBtn('WALLET', 0), _buildTabBtn('CRYPT', 1)]),
+      child: Row(children: [_buildTabBtn('WALLET', 0), _buildTabBtn('CRYPT', 1), _buildTabBtn('HISTORY', 2)]),
     );
   }
 

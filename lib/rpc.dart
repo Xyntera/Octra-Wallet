@@ -188,6 +188,20 @@ class RpcClient {
   Future<RpcResponse> getTx(String hash) async {
     return await req('GET', '/tx/$hash');
   }
+
+  /// Get transaction history for an address
+  Future<List<Map<String, dynamic>>> getHistory(String address) async {
+    final res = await req('GET', '/history/$address');
+    if (res.statusCode == 200 && res.json != null) {
+      if (res.json is List) {
+        return List<Map<String, dynamic>>.from(res.json);
+      }
+      if (res.json['transactions'] != null) {
+        return List<Map<String, dynamic>>.from(res.json['transactions']);
+      }
+    }
+    return [];
+  }
 }
 
 class RpcResponse {

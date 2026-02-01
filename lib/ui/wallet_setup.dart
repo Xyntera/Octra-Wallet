@@ -6,6 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../wallet.dart';
 import 'home.dart';
 import 'pin_screen.dart';
+import 'video_logo.dart';
 
 // ============================================================================
 // WALLET SETUP - Swiss Minimalist
@@ -43,12 +44,8 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Logo
-                    Container(
-                      width: 80, height: 80,
-                      decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 2)),
-                      child: const Icon(Icons.account_balance_wallet_outlined, size: 36),
-                    ).animate().scale(duration: 500.ms, curve: Curves.easeOutBack),
+                    // Animated Video Logo
+                    const VideoLogo(size: 120),
                     
                     const SizedBox(height: 32),
                     

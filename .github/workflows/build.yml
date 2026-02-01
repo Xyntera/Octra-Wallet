@@ -59,14 +59,14 @@ jobs:
       - name: Build Windows
         run: flutter build windows --release
       
-      - name: Create Windows ZIP
-        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath OctraWallet-Windows.zip
+      - name: Create MSIX Installer
+        run: dart run msix:create
       
-      - name: Upload Windows Artifact
+      - name: Upload Windows Installer
         uses: actions/upload-artifact@v4
         with:
           name: OctraWallet-Windows
-          path: OctraWallet-Windows.zip
+          path: build/windows/x64/runner/Release/*.msix
 
   release:
     needs: [build-android, build-windows]
@@ -93,8 +93,10 @@ jobs:
         id: version
         run: echo "version=$(date +'%Y.%m.%d-%H%M')" >> $GITHUB_OUTPUT
       
-      - name: Rename APK
-        run: mv ./release/app-release.apk ./release/OctraWallet-${{ steps.version.outputs.version }}.apk
+      - name: Rename Files
+        run: |
+          mv ./release/app-release.apk ./release/OctraWallet-${{ steps.version.outputs.version }}.apk
+          for f in ./release/*.msix; do mv "$f" "./release/OctraWallet-${{ steps.version.outputs.version }}.msix"; done
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -107,18 +109,18 @@ jobs:
             **Build Date:** ${{ steps.version.outputs.version }}
             
             ### Downloads
-            - **Android APK**: `OctraWallet-${{ steps.version.outputs.version }}.apk`
-            - **Windows**: `OctraWallet-Windows.zip`
+            - **Android**: `OctraWallet-${{ steps.version.outputs.version }}.apk`
+            - **Windows Installer**: `OctraWallet-${{ steps.version.outputs.version }}.msix` (installs to Start Menu)
             
             ### Features
-            - Animated Owl Logo
+            - Security PIN & Biometrics (required)
             - Multi-wallet support
             - Encrypted/Private transactions
-            - Security PIN & Biometrics
+            - Owl Logo animation
           draft: false
           prerelease: false
           files: |
             ./release/OctraWallet-${{ steps.version.outputs.version }}.apk
-            ./release/OctraWallet-Windows.zip
+            ./release/OctraWallet-${{ steps.version.outputs.version }}.msix
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

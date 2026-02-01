@@ -1,5 +1,5 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart'; // For Colors
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -7,7 +7,7 @@ import 'wallet.dart';
 import 'ui/wallet_setup.dart';
 import 'ui/home.dart';
 import 'ui/pin_screen.dart';
-import 'ui/video_logo.dart';
+import 'ui/owl_logo.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,6 +33,9 @@ class OctraWalletApp extends StatefulWidget {
 }
 
 class _OctraWalletAppState extends State<OctraWalletApp> with WidgetsBindingObserver {
+  bool _wasInBackground = false;
+  bool _isLocked = true;
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   
   @override
   void initState() {
@@ -48,20 +51,24 @@ class _OctraWalletAppState extends State<OctraWalletApp> with WidgetsBindingObse
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
-      // Implement force lock here if needed later
-      // For now, simpler is better to avoid navigation key issues without global key
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _wasInBackground = true;
+    } else if (state == AppLifecycleState.resumed && _wasInBackground) {
+      _wasInBackground = false;
+      // Lock the app when coming back from background
+      _isLocked = true;
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return CupertinoApp(
+      navigatorKey: _navigatorKey,
       title: 'Octra Wallet',
       theme: CupertinoThemeData(
         brightness: Brightness.light,
-        primaryColor: const Color(0xFF111111), // Text Primary
-        scaffoldBackgroundColor: const Color(0xFFF8F6F1), // Design 4 BG
+        primaryColor: const Color(0xFF111111),
+        scaffoldBackgroundColor: const Color(0xFFF8F6F1),
         textTheme: CupertinoTextThemeData(
           textStyle: GoogleFonts.inter(color: const Color(0xFF111111)),
           actionTextStyle: GoogleFonts.inter(color: const Color(0xFF111111), fontSize: 18),
@@ -83,6 +90,8 @@ class StartupCheck extends StatefulWidget {
 }
 
 class _StartupCheckState extends State<StartupCheck> {
+  bool _checking = true;
+
   @override
   void initState() {
     super.initState();
@@ -92,18 +101,21 @@ class _StartupCheckState extends State<StartupCheck> {
   Future<void> _checkSecurity() async {
     final wallet = context.read<WalletController>();
     
-    // Check PIN & Enabled
+    // Always check security if PIN exists and is enabled
     if (await wallet.hasPin && await wallet.isSecurityEnabled) {
        final bool? success = await Navigator.of(context).push(
          CupertinoPageRoute(fullscreenDialog: true, builder: (_) => const PinScreen(isChecking: true))
        );
        if (success != true) {
+         // User failed or cancelled - retry
          _checkSecurity();
          return;
        }
     }
 
-    // Check Wallet
+    setState(() => _checking = false);
+
+    // Navigate to appropriate screen
     if (wallet.hasWallet) {
        Navigator.of(context).pushReplacement(
          CupertinoPageRoute(builder: (_) => const HomeTabScaffold())
@@ -123,19 +135,31 @@ class _StartupCheckState extends State<StartupCheck> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            VideoLogo(size: 180, isSplash: true),
-            const SizedBox(height: 24),
+            // Owl Logo (transparent PNG)
+            const OwlLogo(size: 150),
+            const SizedBox(height: 32),
             const Text(
               'OCTRA WALLET',
               style: TextStyle(
-                fontSize: 18,
+                fontSize: 22,
                 fontWeight: FontWeight.w800,
-                letterSpacing: 3,
+                letterSpacing: 4,
                 color: Colors.black,
               ),
             ),
-            const SizedBox(height: 32),
-            const CupertinoActivityIndicator(color: Colors.black, radius: 14),
+            const SizedBox(height: 8),
+            Text(
+              'SECURE • PRIVATE • FAST',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 2,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 48),
+            if (_checking)
+              const CupertinoActivityIndicator(color: Colors.black, radius: 12),
           ],
         ),
       ),

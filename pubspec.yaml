@@ -41,6 +41,9 @@ dependencies:
   flutter_launcher_icons: "^0.13.1"
   flutter_native_splash: "^2.4.0"
 
+dev_dependencies:
+  msix: ^3.16.7
+
 flutter:
   uses-material-design: true
   assets:
@@ -52,3 +55,12 @@ flutter_launcher_icons:
   image_path: "assets/icon.png"
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/icon.png"
+
+msix_config:
+  display_name: Octra Wallet
+  publisher_display_name: Xyntera
+  identity_name: com.octrawallet.app
+  msix_version: 1.0.0.0
+  logo_path: assets/icon.png
+  capabilities: internetClient
+  languages: en-us

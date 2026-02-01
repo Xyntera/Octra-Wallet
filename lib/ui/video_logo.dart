@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+/// Video Logo widget for splash screen - loops a 1-second video
 class VideoLogo extends StatefulWidget {
   final double size;
-  final bool isSplash;
 
   const VideoLogo({
     super.key,
-    this.size = 32,
-    this.isSplash = false,
+    this.size = 150,
   });
 
   @override
@@ -22,7 +21,7 @@ class _VideoLogoState extends State<VideoLogo> {
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.asset('assets/animatelogo.mp4')
+    _controller = VideoPlayerController.asset('assets/splash_video.mp4')
       ..initialize().then((_) {
         if (mounted) {
           setState(() {
@@ -31,26 +30,12 @@ class _VideoLogoState extends State<VideoLogo> {
           _controller.setLooping(true);
           _controller.play();
           _controller.setVolume(0);
-          
-          // Listen to position and restart at 3 seconds for endless loop effect
-          _controller.addListener(_loopAt3Seconds);
         }
       });
   }
 
-  void _loopAt3Seconds() {
-    if (_controller.value.isInitialized) {
-      final position = _controller.value.position;
-      // Loop back to start after 3 seconds
-      if (position.inMilliseconds >= 3000) {
-        _controller.seekTo(Duration.zero);
-      }
-    }
-  }
-
   @override
   void dispose() {
-    _controller.removeListener(_loopAt3Seconds);
     _controller.dispose();
     super.dispose();
   }
@@ -58,11 +43,11 @@ class _VideoLogoState extends State<VideoLogo> {
   @override
   Widget build(BuildContext context) {
     if (!_initialized) {
-      // Show icon placeholder while loading
+      // Show placeholder while loading
       return SizedBox(
         width: widget.size,
         height: widget.size,
-        child: Image.asset('assets/icon.png', fit: BoxFit.contain),
+        child: Image.asset('assets/owl_logo.png', fit: BoxFit.contain),
       );
     }
     

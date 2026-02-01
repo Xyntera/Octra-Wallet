@@ -8,6 +8,7 @@ import 'ui/wallet_setup.dart';
 import 'ui/home.dart';
 import 'ui/pin_screen.dart';
 import 'ui/owl_logo.dart';
+import 'ui/video_logo.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -135,8 +136,8 @@ class _StartupCheckState extends State<StartupCheck> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Owl Logo (transparent PNG)
-            const OwlLogo(size: 150),
+            // Video Logo (1-second loop)
+            const VideoLogo(size: 180),
             const SizedBox(height: 32),
             const Text(
               'OCTRA WALLET',

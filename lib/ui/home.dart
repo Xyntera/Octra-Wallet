@@ -81,7 +81,7 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
   Widget _buildHeader() {
     final ctrl = context.watch<WalletController>();
     return Container(
-      height: 70,
+      height: 80,
       padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(border: Border(bottom: BorderSide(color: _fg.withOpacity(_privateMode ? 0.15 : 1)))),
       child: SafeArea(
@@ -114,19 +114,25 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
             // Refresh with loading animation
             GestureDetector(
               onTap: () => ctrl.refresh(),
-              child: ctrl.isLoading
-                ? CupertinoActivityIndicator(color: _fg)
-                : Icon(CupertinoIcons.refresh, size: 20, color: _fg),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                child: ctrl.isLoading
+                  ? CupertinoActivityIndicator(color: _fg)
+                  : Icon(CupertinoIcons.refresh, size: 26, color: _fg),
+              ),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 8),
             GestureDetector(
               onTap: () => _showMenu(context),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(width: 18, height: 2, color: _fg, margin: const EdgeInsets.only(bottom: 4)),
-                  Container(width: 18, height: 2, color: _fg),
-                ],
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(width: 24, height: 3, color: _fg, margin: const EdgeInsets.only(bottom: 5)),
+                    Container(width: 24, height: 3, color: _fg),
+                  ],
+                ),
               ),
             ),
           ],
@@ -321,7 +327,7 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
   // ==================== BOTTOM TABS ====================
   Widget _buildBottomTabs() {
     return Container(
-      height: 60,
+      height: 72,
       decoration: BoxDecoration(border: Border(top: BorderSide(color: _fg.withOpacity(_privateMode ? 0.1 : 1)))),
       child: Row(children: [_buildTabBtn('WALLET', 0), _buildTabBtn('CRYPT', 1)]),
     );
@@ -338,7 +344,7 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
             color: isActive ? _fg : _bg,
             border: index == 0 ? Border(right: BorderSide(color: _fg.withOpacity(_privateMode ? 0.1 : 1))) : null,
           ),
-          child: Center(child: Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1, color: isActive ? _bg : _fg))),
+          child: Center(child: Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: isActive ? _bg : _fg))),
         ),
       ),
     );

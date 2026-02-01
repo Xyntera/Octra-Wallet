@@ -118,26 +118,27 @@ class _StartupCheckState extends State<StartupCheck> {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      backgroundColor: Colors.black,
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF03057C), Colors.black],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter
-          )
+      backgroundColor: Colors.white,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            VideoLogo(size: 180, isSplash: true),
+            const SizedBox(height: 24),
+            const Text(
+              'OCTRA WALLET',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 3,
+                color: Colors.black,
+              ),
+            ),
+            const SizedBox(height: 32),
+            const CupertinoActivityIndicator(color: Colors.black, radius: 14),
+          ],
         ),
-        child: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              VideoLogo(size: 150, isSplash: true),
-              SizedBox(height: 32),
-              CupertinoActivityIndicator(color: Colors.white, radius: 14)
-            ]
-          ),
-        ),
-      )
+      ),
     );
   }
 }

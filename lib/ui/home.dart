@@ -33,6 +33,7 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
   int _tab = 0;
   bool _privateMode = false;
   late AnimationController _rollController;
+  late PageController _pageController;
   
   // Theme colors
   int _themeColorIndex = 0;
@@ -60,12 +61,14 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
   void initState() {
     super.initState();
     _rollController = AnimationController(vsync: this, duration: const Duration(seconds: 20))..repeat();
+    _pageController = PageController(initialPage: 0);
     WidgetsBinding.instance.addPostFrameCallback((_) => context.read<WalletController>().refresh());
   }
 
   @override
   void dispose() {
     _rollController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -80,7 +83,18 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
         child: Column(
           children: [
             _buildHeader(),
-            Expanded(child: _tab == 0 ? _buildWalletTab() : (_tab == 1 ? _buildCryptTab() : _buildHistoryTab())),
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: (index) => setState(() => _tab = index),
+                physics: const BouncingScrollPhysics(),
+                children: [
+                  _buildWalletTab(),
+                  _buildCryptTab(),
+                  _buildHistoryTab(),
+                ],
+              ),
+            ),
             _buildBottomTabs(),
             // Developer Credit
             Container(
@@ -630,7 +644,9 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
     final isActive = _tab == index;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _tab = index),
+        onTap: () {
+          _pageController.animateToPage(index, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+        },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           decoration: BoxDecoration(
@@ -737,7 +753,7 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
         actions: [
           // Theme Colors
           CupertinoActionSheetAction(
-            child: const Text('🎨 Theme Colors', style: TextStyle(color: Colors.black)),
+            child: const Text('Theme Colors', style: TextStyle(color: Colors.black)),
             onPressed: () {
               Navigator.pop(ctx);
               _showThemeColorPicker(ctx);
@@ -745,7 +761,7 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
           ),
           // Security with PIN
           CupertinoActionSheetAction(
-            child: const Text('🔐 Security Settings', style: TextStyle(color: Colors.black)),
+            child: const Text('Security Settings', style: TextStyle(color: Colors.black)),
             onPressed: () {
               Navigator.pop(ctx);
               Navigator.push(ctx, CupertinoPageRoute(builder: (_) => const SecuritySettingsPage()));
@@ -753,7 +769,7 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
           ),
           // Export Wallet (Requires PIN)
           CupertinoActionSheetAction(
-            child: const Text('📤 Export Wallet (Secure)', style: TextStyle(color: Colors.black)),
+            child: const Text('Export Wallet', style: TextStyle(color: Colors.black)),
             onPressed: () async {
               Navigator.pop(ctx);
               await _secureExportWallet(ctx);
@@ -774,7 +790,7 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
             },
           ),
           CupertinoActionSheetAction(
-            child: const Text('🌐 octrascan.io', style: TextStyle(color: Colors.black)),
+            child: const Text('View on Explorer', style: TextStyle(color: Colors.black)),
             onPressed: () {
               Navigator.pop(ctx);
               final addr = context.read<WalletController>().currentWallet?.address ?? '';

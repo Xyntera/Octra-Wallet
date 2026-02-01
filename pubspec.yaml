@@ -64,12 +64,3 @@ msix_config:
   logo_path: assets/icon.png
   capabilities: internetClient
   languages: en-us
-
-flutter_native_splash:
-  color: "#FFFFFF"
-  image: assets/owl_logo.png
-  android: true
-  ios: true
-  android_12:
-    color: "#FFFFFF"
-    image: assets/owl_logo.png

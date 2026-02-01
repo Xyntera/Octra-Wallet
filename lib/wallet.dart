@@ -302,8 +302,20 @@ class WalletController extends ChangeNotifier {
            // Hash
            newTx['hash'] = tx['hash'] ?? tx['tx_hash'] ?? tx['txid'] ?? tx['transaction_hash'] ?? '';
            
-           // Status
-           newTx['status'] = tx['status'] ?? tx['state'] ?? tx['confirmed'] == true ? 'confirmed' : 'pending';
+           // Status - check various fields, default to 'confirmed' for blockchain txs
+           String txStatus = 'confirmed';
+           if (tx['status'] != null) {
+             txStatus = tx['status'].toString().toLowerCase();
+           } else if (tx['state'] != null) {
+             txStatus = tx['state'].toString().toLowerCase();
+           } else if (tx['confirmed'] != null) {
+             txStatus = tx['confirmed'] == true ? 'confirmed' : 'pending';
+           }
+           // Normalize status values
+           if (txStatus == 'success' || txStatus == 'complete' || txStatus == 'completed') {
+             txStatus = 'confirmed';
+           }
+           newTx['status'] = txStatus;
            
            // Timestamp
            newTx['timestamp'] = tx['timestamp'] ?? tx['time'] ?? tx['created_at'] ?? tx['block_time'] ?? '';

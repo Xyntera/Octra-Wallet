@@ -55,15 +55,35 @@ class _PinScreenState extends State<PinScreen> {
 
   Future<void> _authenticate() async {
     try {
+      // Get available biometric types
+      final List<BiometricType> availableBiometrics = await auth.getAvailableBiometrics();
+      print('Available biometrics: $availableBiometrics');
+      
       final bool didAuthenticate = await auth.authenticate(
-        localizedReason: 'Please authenticate to access Octra Wallet',
-        options: const AuthenticationOptions(stickyAuth: true),
+        localizedReason: 'Authenticate to access Octra Wallet',
+        options: const AuthenticationOptions(
+          stickyAuth: true,
+          biometricOnly: true,  // Use fingerprint/face only, not device PIN
+          useErrorDialogs: true,
+          sensitiveTransaction: true,
+        ),
       );
       if (didAuthenticate) {
          Navigator.pop(context, true);
       }
     } catch (e) {
-      print(e);
+      print('Biometric auth error: $e');
+      // Show error to user
+      if (mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (_) => CupertinoAlertDialog(
+            title: const Text('Biometric Error'),
+            content: Text('Could not authenticate: $e'),
+            actions: [CupertinoDialogAction(child: const Text('OK'), onPressed: () => Navigator.pop(context))],
+          ),
+        );
+      }
     }
   }
 

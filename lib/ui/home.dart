@@ -372,7 +372,8 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
   Widget _buildHistoryTile(Map<String, dynamic> tx) {
     final direction = tx['direction'] ?? 'OUT';
     final isOut = direction == 'OUT';
-    final amount = double.tryParse(tx['amount']?.toString() ?? '0') ?? 0.0;
+    // Use displayAmount which is already converted to double in _fetchHistory
+    final amount = (tx['displayAmount'] as double?) ?? double.tryParse(tx['amount']?.toString() ?? '0') ?? 0.0;
     final hash = tx['hash'] ?? tx['tx_hash'] ?? '';
     final from = tx['from'] ?? '';
     final to = tx['to'] ?? '';
@@ -393,7 +394,9 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
       statusIcon = CupertinoIcons.xmark_circle_fill;
     }
     
-    return Container(
+    return GestureDetector(
+      onTap: () => _showTransactionDetails(tx),
+      child: Container(
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -471,7 +474,119 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
           ),
         ],
       ),
-    ).animate().fadeIn().slideX(begin: 0.02);
+    )).animate().fadeIn().slideX(begin: 0.02);
+  }
+
+  void _showTransactionDetails(Map<String, dynamic> tx) {
+    final direction = tx['direction'] ?? 'OUT';
+    final isOut = direction == 'OUT';
+    final amount = (tx['displayAmount'] as double?) ?? 0.0;
+    final hash = tx['hash'] ?? '';
+    final from = tx['from'] ?? '';
+    final to = tx['to'] ?? '';
+    final status = tx['status'] ?? 'confirmed';
+    final timestamp = tx['timestamp'] ?? '';
+    
+    showCupertinoModalPopup(
+      context: context,
+      builder: (_) => Container(
+        height: MediaQuery.of(context).size.height * 0.6,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: _bg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Container(
+                  width: 48, height: 48,
+                  decoration: BoxDecoration(
+                    color: (isOut ? Colors.red : Colors.green).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    isOut ? CupertinoIcons.arrow_up_right : CupertinoIcons.arrow_down_left,
+                    color: isOut ? Colors.red : Colors.green,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(isOut ? 'SENT' : 'RECEIVED', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _fg)),
+                      Text(status.toUpperCase(), style: TextStyle(fontSize: 11, color: status == 'confirmed' ? Colors.green : Colors.orange)),
+                    ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Icon(CupertinoIcons.xmark_circle_fill, color: _fg.withOpacity(0.3)),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 24),
+            
+            // Amount
+            Center(
+              child: Text(
+                '${isOut ? "-" : "+"}${amount.toStringAsFixed(6)} OCT',
+                style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: isOut ? Colors.red : Colors.green),
+              ),
+            ),
+            
+            const SizedBox(height: 24),
+            Divider(color: _fg.withOpacity(0.1)),
+            const SizedBox(height: 16),
+            
+            // Details
+            _detailRow('FROM', from),
+            _detailRow('TO', to),
+            if (hash.isNotEmpty) _detailRow('TX HASH', hash),
+            if (timestamp.isNotEmpty) _detailRow('TIME', timestamp.toString()),
+            _detailRow('STATUS', status.toUpperCase()),
+            
+            const Spacer(),
+            
+            // View on Explorer
+            if (hash.isNotEmpty)
+              GestureDetector(
+                onTap: () => launchUrl(Uri.parse('https://octra.network/tx/$hash')),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(border: Border.all(color: _fg)),
+                  child: Center(child: Text('VIEW ON EXPLORER', style: TextStyle(fontWeight: FontWeight.w700, color: _fg, letterSpacing: 1))),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: _fg.withOpacity(0.4), letterSpacing: 1)),
+          ),
+          Expanded(
+            child: Text(value, style: TextStyle(fontSize: 12, fontFamily: 'Courier', color: _fg), overflow: TextOverflow.ellipsis, maxLines: 2),
+          ),
+        ],
+      ),
+    );
   }
 
   String _shortAddress(String addr) {

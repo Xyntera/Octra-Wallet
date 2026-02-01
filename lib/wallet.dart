@@ -265,20 +265,49 @@ class WalletController extends ChangeNotifier {
     if (currentWallet == null) return;
     try {
       final res = await rpc.getAddressInfo("${currentWallet!.address}?limit=20");
+      print("History API response: $res"); // Debug
+      
       if (res != null && res.containsKey('recent_transactions')) {
          final List<dynamic> recents = res['recent_transactions'];
          history = recents.map((tx) {
            final Map<String, dynamic> newTx = Map.from(tx);
            
-           // Direction
-           final String from = (tx['from'] ?? "").toString();
-           final bool isOut = from == currentWallet!.address; 
+           // Handle different field names for sender/receiver
+           final String from = (tx['from'] ?? tx['sender'] ?? tx['from_address'] ?? "").toString();
+           final String to = (tx['to'] ?? tx['receiver'] ?? tx['to_address'] ?? "").toString();
+           newTx['from'] = from;
+           newTx['to'] = to;
+           
+           // Direction: OUT if we are the sender
+           final bool isOut = from.toLowerCase() == currentWallet!.address.toLowerCase();
            newTx['direction'] = isOut ? 'OUT' : 'IN';
            
-           // Amount (handle raw string "1000000" -> 1.0)
-           final rawAmt = double.tryParse(tx['amount'].toString()) ?? 0.0;
-           final displayAmt = rawAmt / 1000000.0;
-           newTx['amount'] = displayAmt.toString(); // Store normalized string for UI
+           // Amount: handle various field names and formats
+           dynamic rawAmount = tx['amount'] ?? tx['value'] ?? tx['amt'] ?? 0;
+           double displayAmt = 0.0;
+           
+           if (rawAmount is String) {
+             // Could be "1000000" (raw) or "1.0" (already formatted)
+             final parsed = double.tryParse(rawAmount) ?? 0.0;
+             // If > 1000, assume it's in micro units
+             displayAmt = parsed > 1000 ? parsed / 1000000.0 : parsed;
+           } else if (rawAmount is int) {
+             displayAmt = rawAmount / 1000000.0;
+           } else if (rawAmount is double) {
+             displayAmt = rawAmount > 1000 ? rawAmount / 1000000.0 : rawAmount;
+           }
+           newTx['displayAmount'] = displayAmt;
+           
+           // Hash
+           newTx['hash'] = tx['hash'] ?? tx['tx_hash'] ?? tx['txid'] ?? '';
+           
+           // Status
+           newTx['status'] = tx['status'] ?? tx['state'] ?? 'confirmed';
+           
+           // Timestamp
+           newTx['timestamp'] = tx['timestamp'] ?? tx['time'] ?? tx['created_at'] ?? '';
+           
+           print("Parsed TX: direction=${newTx['direction']}, amount=$displayAmt, from=$from, to=$to"); // Debug
            
            return newTx;
          }).toList();

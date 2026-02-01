@@ -13,6 +13,7 @@ import 'wallet_setup.dart';
 import 'scanner.dart';
 import 'success_animation.dart';
 import 'pin_screen.dart';
+import 'owl_logo.dart';
 
 // ============================================================================
 // OCTRA WALLET - PREMIUM ANIMATED UI
@@ -87,17 +88,8 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
         child: Row(
           children: [
             // Animated Logo
-            AnimatedBuilder(
-              animation: _rollController,
-              builder: (_, __) => Transform.rotate(
-                angle: _rollController.value * 6.28,
-                child: Container(
-                  width: 28, height: 28,
-                  decoration: BoxDecoration(border: Border.all(color: _accent, width: 2)),
-                  child: Center(child: Text('O', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: _accent))),
-                ),
-              ),
-            ),
+            // Animated Owl Logo
+            OwlLogo(color: _accent, size: 24),
             const SizedBox(width: 12),
             GestureDetector(
               onTap: () => _showWalletPicker(context, ctrl),

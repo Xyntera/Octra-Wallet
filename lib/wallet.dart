@@ -264,17 +264,17 @@ class WalletController extends ChangeNotifier {
   Future<void> _fetchHistory() async {
     if (currentWallet == null) return;
     try {
-      final res = await rpc.getAddressInfo("${currentWallet!.address}?limit=20");
-      print("History API response: $res"); // Debug
+      // Use new getHistory API that tries octrascan.io first
+      final transactions = await rpc.getHistory(currentWallet!.address);
+      print("History API response: ${transactions.length} transactions"); // Debug
       
-      if (res != null && res.containsKey('recent_transactions')) {
-         final List<dynamic> recents = res['recent_transactions'];
-         history = recents.map((tx) {
+      if (transactions.isNotEmpty) {
+         history = transactions.map((tx) {
            final Map<String, dynamic> newTx = Map.from(tx);
            
            // Handle different field names for sender/receiver
-           final String from = (tx['from'] ?? tx['sender'] ?? tx['from_address'] ?? "").toString();
-           final String to = (tx['to'] ?? tx['receiver'] ?? tx['to_address'] ?? "").toString();
+           final String from = (tx['from'] ?? tx['sender'] ?? tx['from_address'] ?? tx['source'] ?? "").toString();
+           final String to = (tx['to'] ?? tx['receiver'] ?? tx['to_address'] ?? tx['destination'] ?? "").toString();
            newTx['from'] = from;
            newTx['to'] = to;
            
@@ -283,37 +283,41 @@ class WalletController extends ChangeNotifier {
            newTx['direction'] = isOut ? 'OUT' : 'IN';
            
            // Amount: handle various field names and formats
-           dynamic rawAmount = tx['amount'] ?? tx['value'] ?? tx['amt'] ?? 0;
+           dynamic rawAmount = tx['amount'] ?? tx['value'] ?? tx['amt'] ?? tx['quantity'] ?? 0;
            double displayAmt = 0.0;
            
            if (rawAmount is String) {
-             // Could be "1000000" (raw) or "1.0" (already formatted)
-             final parsed = double.tryParse(rawAmount) ?? 0.0;
+             // Could be "1000000" (raw) or "1.0" (already formatted) or "1.5 OCT"
+             final cleanAmt = rawAmount.replaceAll(RegExp(r'[^\d.]'), '');
+             final parsed = double.tryParse(cleanAmt) ?? 0.0;
              // If > 1000, assume it's in micro units
              displayAmt = parsed > 1000 ? parsed / 1000000.0 : parsed;
            } else if (rawAmount is int) {
-             displayAmt = rawAmount / 1000000.0;
+             displayAmt = rawAmount > 1000 ? rawAmount / 1000000.0 : rawAmount.toDouble();
            } else if (rawAmount is double) {
              displayAmt = rawAmount > 1000 ? rawAmount / 1000000.0 : rawAmount;
            }
            newTx['displayAmount'] = displayAmt;
            
            // Hash
-           newTx['hash'] = tx['hash'] ?? tx['tx_hash'] ?? tx['txid'] ?? '';
+           newTx['hash'] = tx['hash'] ?? tx['tx_hash'] ?? tx['txid'] ?? tx['transaction_hash'] ?? '';
            
            // Status
-           newTx['status'] = tx['status'] ?? tx['state'] ?? 'confirmed';
+           newTx['status'] = tx['status'] ?? tx['state'] ?? tx['confirmed'] == true ? 'confirmed' : 'pending';
            
            // Timestamp
-           newTx['timestamp'] = tx['timestamp'] ?? tx['time'] ?? tx['created_at'] ?? '';
+           newTx['timestamp'] = tx['timestamp'] ?? tx['time'] ?? tx['created_at'] ?? tx['block_time'] ?? '';
            
-           print("Parsed TX: direction=${newTx['direction']}, amount=$displayAmt, from=$from, to=$to"); // Debug
+           print("Parsed TX: direction=${newTx['direction']}, amount=$displayAmt, from=$from, to=$to, hash=${newTx['hash']}"); // Debug
            
            return newTx;
          }).toList();
+      } else {
+        history = [];
       }
     } catch (e) {
       print("History fetch error: $e");
+      history = [];
     }
   }
 

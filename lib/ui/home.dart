@@ -1,5 +1,5 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Colors, Icons, Scaffold, ListTile, Divider, SelectableText, SwitchListTile;
+import 'package:flutter/material.dart' show Colors, Icons, Scaffold, ListTile, Divider, SelectableText, SwitchListTile, SnackBar, ScaffoldMessenger, GridView, SliverGridDelegateWithFixedCrossAxisCount;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -33,10 +33,28 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
   int _tab = 0;
   bool _privateMode = false;
   late AnimationController _rollController;
+  
+  // Theme colors
+  int _themeColorIndex = 0;
+  static const List<Color> _themeColors = [
+    Colors.black,           // 0: Classic Black
+    Color(0xFF1E3A5F),      // 1: Ocean Blue
+    Color(0xFF2D4739),      // 2: Forest Green
+    Color(0xFF4A1C40),      // 3: Royal Purple
+    Color(0xFF8B0000),      // 4: Deep Red
+    Color(0xFF1C1C1C),      // 5: Charcoal
+    Color(0xFF0D4F4F),      // 6: Teal
+    Color(0xFF4A3728),      // 7: Coffee Brown
+  ];
+  
+  static const List<String> _themeNames = [
+    'CLASSIC BLACK', 'OCEAN BLUE', 'FOREST GREEN', 'ROYAL PURPLE',
+    'DEEP RED', 'CHARCOAL', 'TEAL', 'COFFEE BROWN',
+  ];
 
   Color get _bg => _privateMode ? const Color(0xFF0A1F12) : Colors.white;
-  Color get _fg => _privateMode ? const Color(0xFFE0E0E0) : Colors.black;
-  Color get _accent => _privateMode ? const Color(0xFF4ADE80) : Colors.black;
+  Color get _fg => _privateMode ? const Color(0xFFE0E0E0) : _themeColors[_themeColorIndex];
+  Color get _accent => _privateMode ? const Color(0xFF4ADE80) : _themeColors[_themeColorIndex];
 
   @override
   void initState() {
@@ -82,15 +100,15 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
   Widget _buildHeader() {
     final ctrl = context.watch<WalletController>();
     return Container(
-      height: 80,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: _fg.withOpacity(_privateMode ? 0.15 : 1)))),
+      height: 95,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: _fg.withOpacity(_privateMode ? 0.15 : 0.2)))),
       child: SafeArea(
         bottom: false,
         child: Row(
           children: [
-            // Animated Video Logo
-            const VideoLogo(size: 36),
+            // Animated Video Logo - Bigger
+            const VideoLogo(size: 44),
             const SizedBox(width: 8),
             Expanded(
               child: GestureDetector(
@@ -562,7 +580,7 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
             // View on Explorer
             if (hash.isNotEmpty)
               GestureDetector(
-                onTap: () => launchUrl(Uri.parse('https://octra.network/tx/$hash')),
+                onTap: () => launchUrl(Uri.parse('https://octrascan.io/transactions/$hash')),
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
@@ -717,11 +735,28 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
       context: ctx,
       builder: (_) => CupertinoActionSheet(
         actions: [
+          // Theme Colors
           CupertinoActionSheetAction(
-            child: const Text('Security Settings', style: TextStyle(color: Colors.black)),
+            child: const Text('🎨 Theme Colors', style: TextStyle(color: Colors.black)),
             onPressed: () {
               Navigator.pop(ctx);
-              Navigator.push(ctx, CupertinoPageRoute(builder: (_) => const PinScreen(isSettingPin: true)));
+              _showThemeColorPicker(ctx);
+            },
+          ),
+          // Security with PIN
+          CupertinoActionSheetAction(
+            child: const Text('🔐 Security Settings', style: TextStyle(color: Colors.black)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(ctx, CupertinoPageRoute(builder: (_) => const SecuritySettingsPage()));
+            },
+          ),
+          // Export Wallet (Requires PIN)
+          CupertinoActionSheetAction(
+            child: const Text('📤 Export Wallet (Secure)', style: TextStyle(color: Colors.black)),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _secureExportWallet(ctx);
             },
           ),
           CupertinoActionSheetAction(
@@ -739,10 +774,11 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
             },
           ),
           CupertinoActionSheetAction(
-            child: const Text('Website: octrawallet.app', style: TextStyle(color: Colors.black)),
+            child: const Text('🌐 octrascan.io', style: TextStyle(color: Colors.black)),
             onPressed: () {
               Navigator.pop(ctx);
-              launchUrl(Uri.parse('https://octrawallet.app'), mode: LaunchMode.externalApplication);
+              final addr = context.read<WalletController>().currentWallet?.address ?? '';
+              launchUrl(Uri.parse('https://octrascan.io/addresses/$addr'), mode: LaunchMode.externalApplication);
             },
           ),
           CupertinoActionSheetAction(
@@ -763,6 +799,164 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
         cancelButton: CupertinoActionSheetAction(
           child: const Text('Cancel', style: TextStyle(color: Colors.red)),
           onPressed: () => Navigator.pop(ctx),
+        ),
+      ),
+    );
+  }
+  
+  // Theme Color Picker
+  void _showThemeColorPicker(BuildContext ctx) {
+    showCupertinoModalPopup(
+      context: ctx,
+      builder: (_) => Container(
+        height: 380,
+        color: _bg,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('THEME COLORS', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 1, color: _fg)),
+            const SizedBox(height: 8),
+            Text('Select your preferred accent color', style: TextStyle(fontSize: 12, color: _fg.withOpacity(0.5))),
+            const SizedBox(height: 24),
+            Expanded(
+              child: GridView.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, crossAxisSpacing: 16, mainAxisSpacing: 16),
+                itemCount: _themeColors.length,
+                itemBuilder: (_, i) => GestureDetector(
+                  onTap: () {
+                    setState(() => _themeColorIndex = i);
+                    Navigator.pop(ctx);
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: _themeColors[i],
+                      borderRadius: BorderRadius.circular(12),
+                      border: _themeColorIndex == i ? Border.all(color: Colors.white, width: 3) : null,
+                      boxShadow: [BoxShadow(color: _themeColors[i].withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 4))],
+                    ),
+                    child: _themeColorIndex == i ? const Icon(CupertinoIcons.checkmark, color: Colors.white) : null,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text('Current: ${_themeNames[_themeColorIndex]}', style: TextStyle(fontSize: 11, color: _fg.withOpacity(0.6))),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  // Secure Export Wallet (Requires PIN)
+  Future<void> _secureExportWallet(BuildContext ctx) async {
+    final wallet = ctx.read<WalletController>();
+    
+    // Check if security is enabled and require PIN
+    if (await wallet.hasPin) {
+      final success = await Navigator.push<bool>(
+        ctx,
+        CupertinoPageRoute(fullscreenDialog: true, builder: (_) => const PinScreen(isChecking: true)),
+      );
+      if (success != true) {
+        // PIN check failed, show error
+        showCupertinoDialog(
+          context: ctx,
+          builder: (_) => CupertinoAlertDialog(
+            title: const Text('Access Denied'),
+            content: const Text('PIN verification required to export wallet.'),
+            actions: [CupertinoDialogAction(child: const Text('OK'), onPressed: () => Navigator.pop(ctx))],
+          ),
+        );
+        return;
+      }
+    }
+    
+    // Show export dialog after PIN verification
+    _showSecureExportDialog(ctx);
+  }
+  
+  void _showSecureExportDialog(BuildContext ctx) {
+    final w = context.read<WalletController>().currentWallet;
+    if (w == null) return;
+    
+    showCupertinoModalPopup(
+      context: ctx,
+      builder: (_) => Container(
+        height: MediaQuery.of(ctx).size.height * 0.7,
+        color: _bg,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(CupertinoIcons.lock_shield_fill, color: Colors.green, size: 28),
+                const SizedBox(width: 12),
+                Text('EXPORT WALLET', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _fg)),
+                const Spacer(),
+                GestureDetector(onTap: () => Navigator.pop(ctx), child: Icon(CupertinoIcons.xmark_circle_fill, color: _fg.withOpacity(0.3))),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text('Keep this information secure!', style: TextStyle(fontSize: 11, color: Colors.orange)),
+            const SizedBox(height: 24),
+            
+            // Seed Phrase
+            if (w.mnemonic != null && w.mnemonic!.isNotEmpty) ...[
+              Text('SEED PHRASE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1, color: _fg.withOpacity(0.5))),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(border: Border.all(color: _fg.withOpacity(0.2)), borderRadius: BorderRadius.circular(8)),
+                child: SelectableText(w.mnemonic!, style: TextStyle(fontSize: 12, height: 1.6, color: _fg)),
+              ),
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: w.mnemonic!));
+                  HapticFeedback.mediumImpact();
+                  ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Seed phrase copied!'), duration: Duration(seconds: 2)));
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(8)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: const [
+                    Icon(CupertinoIcons.doc_on_clipboard, color: Colors.white, size: 16),
+                    SizedBox(width: 8),
+                    Text('COPY SEED PHRASE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 11)),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+            
+            // Private Key
+            Text('PRIVATE KEY', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1, color: _fg.withOpacity(0.5))),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(border: Border.all(color: _fg.withOpacity(0.2)), borderRadius: BorderRadius.circular(8)),
+              child: SelectableText(w.privateKeyBase64, style: TextStyle(fontSize: 10, fontFamily: 'Courier', color: _fg)),
+            ),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: w.privateKeyBase64));
+                HapticFeedback.mediumImpact();
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Private key copied!'), duration: Duration(seconds: 2)));
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(8)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: const [
+                  Icon(CupertinoIcons.doc_on_clipboard, color: Colors.white, size: 16),
+                  SizedBox(width: 8),
+                  Text('COPY PRIVATE KEY', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 11)),
+                ]),
+              ),
+            ),
+          ],
         ),
       ),
     );

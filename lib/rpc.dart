@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 const String kBaseUrl = 'https://octra.network';
+const String kScanUrl = 'https://octrascan.io/api';
 const int kTimeoutSeconds = 10;
 const int kMicro = 1000000;
 
@@ -189,15 +190,34 @@ class RpcClient {
     return await req('GET', '/tx/$hash');
   }
 
-  /// Get transaction history for an address
+  /// Get transaction history for an address using octrascan.io
   Future<List<Map<String, dynamic>>> getHistory(String address) async {
-    final res = await req('GET', '/history/$address');
-    if (res.statusCode == 200 && res.json != null) {
-      if (res.json is List) {
-        return List<Map<String, dynamic>>.from(res.json);
+    // Try octrascan.io first
+    try {
+      final scanUrl = Uri.parse('$kScanUrl/address/$address/transactions');
+      final scanRes = await _client.get(scanUrl, headers: {'Content-Type': 'application/json'}).timeout(Duration(seconds: kTimeoutSeconds));
+      
+      if (scanRes.statusCode == 200) {
+        final json = jsonDecode(scanRes.body);
+        if (json is List) {
+          return List<Map<String, dynamic>>.from(json);
+        }
+        if (json['transactions'] != null) {
+          return List<Map<String, dynamic>>.from(json['transactions']);
+        }
+        if (json['data'] != null) {
+          return List<Map<String, dynamic>>.from(json['data']);
+        }
       }
-      if (res.json['transactions'] != null) {
-        return List<Map<String, dynamic>>.from(res.json['transactions']);
+    } catch (e) {
+      print('Octrascan API error: $e');
+    }
+    
+    // Fallback to octra.network
+    final res = await req('GET', '/address/$address');
+    if (res.statusCode == 200 && res.json != null) {
+      if (res.json['recent_transactions'] != null) {
+        return List<Map<String, dynamic>>.from(res.json['recent_transactions']);
       }
     }
     return [];

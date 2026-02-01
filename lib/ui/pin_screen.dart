@@ -31,16 +31,25 @@ class _PinScreenState extends State<PinScreen> {
 
   Future<void> _checkBiometrics() async {
     try {
+      // Check if device supports biometrics
+      final bool isDeviceSupported = await auth.isDeviceSupported();
       final bool canAuthenticateWithBiometrics = await auth.canCheckBiometrics;
+      final bool canAuthenticate = isDeviceSupported && canAuthenticateWithBiometrics;
+      
       setState(() {
-        _canCheckBiometrics = canAuthenticateWithBiometrics;
+        _canCheckBiometrics = canAuthenticate;
       });
-      if (widget.isChecking && canAuthenticateWithBiometrics) {
-         // Auto trigger for checking
+      
+      if (widget.isChecking && canAuthenticate) {
+         // Auto trigger biometric authentication when checking
+         await Future.delayed(const Duration(milliseconds: 300)); // Small delay for UI
          _authenticate(); 
       }
     } catch (e) {
-      print(e);
+      print('Biometrics check error: $e');
+      setState(() {
+        _canCheckBiometrics = false;
+      });
     }
   }
 

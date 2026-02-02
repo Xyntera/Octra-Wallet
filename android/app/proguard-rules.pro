@@ -18,6 +18,17 @@
 -keepattributes *Annotation*
 -keepattributes Signature
 
+# Suppress warnings for missing Play Core classes (not used in this app)
+-dontwarn com.google.android.play.core.**
+-dontwarn com.google.android.play.core.splitcompat.**
+-dontwarn com.google.android.play.core.splitinstall.**
+-dontwarn com.google.android.play.core.tasks.**
+
+# Ignore missing Play Store split install classes
+-keep class com.google.android.play.core.** { *; }
+
 # Suppress warnings
 -dontwarn kotlin.**
 -dontwarn kotlinx.**
+-dontwarn javax.annotation.**
+-dontwarn org.conscrypt.**

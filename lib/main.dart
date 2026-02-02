@@ -2,13 +2,12 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:video_player/video_player.dart';
 
 import 'wallet.dart';
 import 'ui/wallet_setup.dart';
 import 'ui/home.dart';
 import 'ui/pin_screen.dart';
-import 'ui/owl_logo.dart';
-import 'ui/video_logo.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -92,14 +91,55 @@ class StartupCheck extends StatefulWidget {
 
 class _StartupCheckState extends State<StartupCheck> {
   bool _checking = true;
+  late VideoPlayerController _splashController;
+  bool _videoReady = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkSecurity());
+    _initSplashVideo();
+  }
+
+  Future<void> _initSplashVideo() async {
+    _splashController = VideoPlayerController.asset('assets/animatelogo.mp4');
+    
+    try {
+      await _splashController.initialize();
+      await _splashController.setLooping(false);
+      setState(() => _videoReady = true);
+      
+      // Play splash video
+      _splashController.play();
+      
+      // Wait for video to end, then check security
+      _splashController.addListener(() {
+        if (_splashController.value.position >= _splashController.value.duration) {
+          _checkSecurity();
+        }
+      });
+      
+      // Fallback timeout (3 seconds max)
+      Future.delayed(const Duration(seconds: 3), () {
+        if (_checking) _checkSecurity();
+      });
+    } catch (e) {
+      print('Splash video error: $e');
+      // If video fails, proceed after short delay
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (_checking) _checkSecurity();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _splashController.dispose();
+    super.dispose();
   }
 
   Future<void> _checkSecurity() async {
+    if (!_checking) return;
+    
     final wallet = context.read<WalletController>();
     
     // Always check security if PIN exists and is enabled
@@ -133,36 +173,31 @@ class _StartupCheckState extends State<StartupCheck> {
     return CupertinoPageScaffold(
       backgroundColor: Colors.white,
       child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Video Logo (1-second loop)
-            const VideoLogo(size: 180),
-            const SizedBox(height: 32),
-            const Text(
-              'OCTRA WALLET',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 4,
-                color: Colors.black,
-              ),
+        child: _videoReady
+          ? SizedBox(
+              width: 200,
+              height: 200,
+              child: VideoPlayer(_splashController),
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Fallback static logo while video loads
+                Image.asset('assets/icon.png', width: 120, height: 120),
+                const SizedBox(height: 32),
+                const Text(
+                  'OCTRA WALLET',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 4,
+                    color: Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 48),
+                const CupertinoActivityIndicator(color: Colors.black, radius: 12),
+              ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              'SECURE • PRIVATE • FAST',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 2,
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 48),
-            if (_checking)
-              const CupertinoActivityIndicator(color: Colors.black, radius: 12),
-          ],
-        ),
       ),
     );
   }

@@ -1,5 +1,5 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Colors, Icons, Scaffold, ListTile, Divider, SelectableText, SwitchListTile, SnackBar, ScaffoldMessenger, GridView, SliverGridDelegateWithFixedCrossAxisCount;
+import 'package:flutter/material.dart' show Colors, Icons, Scaffold, ListTile, Divider, SelectableText, SwitchListTile, SnackBar, ScaffoldMessenger, GridView, SliverGridDelegateWithFixedCrossAxisCount, Drawer, ListView, ScaffoldState, GlobalKey, VoidCallback;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -34,6 +34,7 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
   bool _privateMode = false;
   late AnimationController _rollController;
   late PageController _pageController;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   
   // Theme colors
   int _themeColorIndex = 0;
@@ -75,7 +76,9 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: _bg,
+      endDrawer: _buildDrawer(),
       body: AnimatedContainer(
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeInOut,
@@ -160,7 +163,7 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
             ),
             const SizedBox(width: 8),
             GestureDetector(
-              onTap: () => _showMenu(context),
+              onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
               child: Container(
                 padding: const EdgeInsets.all(12),
                 child: Column(
@@ -743,6 +746,95 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
           CupertinoDialogAction(isDefaultAction: true, child: const Text('SAVE'), onPressed: () { ctrl.updateWallet(w.address, name: nameCtrl.text, color: color); Navigator.pop(ctx); }),
         ],
       )),
+    );
+  }
+
+  // ==================== SLIDE DRAWER ====================
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: _bg,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: _fg.withOpacity(0.1)))),
+              child: Row(
+                children: [
+                  Image.asset('assets/icon.png', width: 48, height: 48),
+                  const SizedBox(width: 16),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('OCTRA WALLET', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _fg, letterSpacing: 1)),
+                      Text('Settings & Options', style: TextStyle(fontSize: 12, color: _fg.withOpacity(0.6))),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                children: [
+                  _drawerItem(Icons.palette_outlined, 'Theme Colors', () {
+                    Navigator.pop(context);
+                    _showThemeColorPicker(context);
+                  }),
+                  _drawerItem(Icons.security_outlined, 'Security Settings', () {
+                    Navigator.pop(context);
+                    Navigator.push(context, CupertinoPageRoute(builder: (_) => const SecuritySettingsPage()));
+                  }),
+                  _drawerItem(Icons.file_download_outlined, 'Export Wallet', () async {
+                    Navigator.pop(context);
+                    await _secureExportWallet(context);
+                  }),
+                  Divider(color: _fg.withOpacity(0.1), height: 24),
+                  _drawerItem(Icons.privacy_tip_outlined, 'Privacy Policy', () {
+                    Navigator.pop(context);
+                    Navigator.push(context, CupertinoPageRoute(builder: (_) => const PrivacyPolicyPage()));
+                  }),
+                  _drawerItem(Icons.description_outlined, 'Terms & Conditions', () {
+                    Navigator.pop(context);
+                    Navigator.push(context, CupertinoPageRoute(builder: (_) => const TermsPage()));
+                  }),
+                  Divider(color: _fg.withOpacity(0.1), height: 24),
+                  _drawerItem(Icons.explore_outlined, 'View on Explorer', () {
+                    Navigator.pop(context);
+                    final addr = context.read<WalletController>().currentWallet?.address ?? '';
+                    launchUrl(Uri.parse('https://octrascan.io/addresses/$addr'), mode: LaunchMode.externalApplication);
+                  }),
+                  _drawerItem(Icons.refresh, 'Refresh Data', () {
+                    Navigator.pop(context);
+                    context.read<WalletController>().refresh();
+                  }),
+                ],
+              ),
+            ),
+            
+            // Footer
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: GestureDetector(
+                onTap: () => launchUrl(Uri.parse('https://x.com/glaqzz')),
+                child: Text('Developer @glaqzz', style: TextStyle(fontSize: 11, color: _fg.withOpacity(0.4))),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _drawerItem(IconData icon, String label, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: _fg, size: 22),
+      title: Text(label, style: TextStyle(color: _fg, fontSize: 15, fontWeight: FontWeight.w500)),
+      onTap: onTap,
+      dense: true,
     );
   }
 

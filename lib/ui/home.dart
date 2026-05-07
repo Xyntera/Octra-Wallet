@@ -1,5 +1,5 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Alignment, Colors, Gradient, Icons, LinearGradient;
+import 'package:flutter/material.dart' show Alignment, Colors, Divider, Gradient, Icons, LinearGradient;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';

@@ -7,6 +7,10 @@
 
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
     #include <stdlib.h>
+#elif defined(__ANDROID__)
+    #include <unistd.h>
+    #include <fcntl.h>
+    #include <errno.h>
 #elif defined(__linux__)
     #include <unistd.h>
     #include <sys/random.h>
@@ -40,6 +44,34 @@ inline void store_le64(uint8_t * p, uint64_t x) {
 inline void csprng_bytes(uint8_t * out, size_t n) {
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
     arc4random_buf(out, n);
+
+#elif defined(__ANDROID__)
+    size_t off = 0;
+    int fd = ::open("/dev/urandom", O_RDONLY);
+    if (fd < 0) {
+        std::abort();
+    }
+
+    while (off < n) {
+        ssize_t r = ::read(fd, out + off, n - off);
+
+        if (r > 0) {
+            off += r;
+            continue;
+        }
+
+        if (r < 0 && errno == EINTR) {
+            continue;
+        }
+
+        break;
+    }
+
+    ::close(fd);
+
+    if (off != n) {
+        std::abort();
+    }
 
 #elif defined(__linux__)
     size_t off = 0;

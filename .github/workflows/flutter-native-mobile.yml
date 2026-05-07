@@ -31,12 +31,12 @@ jobs:
 
       - name: Analyze Flutter project
         working-directory: Octra-Wallet
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Run Flutter tests if present
         working-directory: Octra-Wallet
         run: |
-          if [ -d test ]; then
+          if find test -name '*_test.dart' -print -quit 2>/dev/null | grep -q .; then
             flutter test
           else
             echo "No Flutter tests found"

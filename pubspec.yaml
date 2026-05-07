@@ -1,5 +1,5 @@
 name: ouqro_wallet
-description: Octra Wallet – local keygen, import/export, explorer-based balance & history
+description: Octra Wallet - Flutter client with a native PVAC wallet-core bridge
 publish_to: "none"
 
 version: 1.0.0+1
@@ -25,6 +25,7 @@ dependencies:
   cryptography: ^2.7.0
   convert: ^3.1.1
   crypto: ^3.0.3
+  ffi: ^2.1.3
 
   # UI / Assets
   google_fonts: ^6.2.1

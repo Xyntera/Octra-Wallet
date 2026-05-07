@@ -1,0 +1,263 @@
+import 'dart:convert';
+import 'dart:ffi';
+import 'dart:io';
+
+import 'package:ffi/ffi.dart';
+
+class OctraCoreSnapshot {
+  final Map<String, dynamic> data;
+  const OctraCoreSnapshot(this.data);
+}
+
+abstract class OctraCoreBridge {
+  bool get isAvailable;
+
+  Future<String> version();
+  Future<Map<String, dynamic>> health();
+  Future<Map<String, dynamic>> publicSnapshot(String address);
+  Future<List<dynamic>> historySnapshot(
+    String address, {
+    int limit,
+    int offset,
+  });
+  Future<Map<String, dynamic>> txDetails(String hash);
+  Future<Map<String, dynamic>> executePrivacyOperation(Map<String, dynamic> payload);
+  Future<Map<String, dynamic>> recommendFee(String operationType, int recipientCount);
+  Future<List<dynamic>> scanStealthInbox(String address);
+  Future<Map<String, dynamic>> importToken(String contractAddress);
+}
+
+typedef _StringFnNative = Pointer<Utf8> Function();
+typedef _StringFnDart = Pointer<Utf8> Function();
+
+typedef _OneStringFnNative = Pointer<Utf8> Function(Pointer<Utf8>);
+typedef _OneStringFnDart = Pointer<Utf8> Function(Pointer<Utf8>);
+
+typedef _HistoryFnNative = Pointer<Utf8> Function(Pointer<Utf8>, Int32, Int32);
+typedef _HistoryFnDart = Pointer<Utf8> Function(Pointer<Utf8>, int, int);
+
+typedef _FreeStringNative = Void Function(Pointer<Utf8>);
+typedef _FreeStringDart = void Function(Pointer<Utf8>);
+
+class FfiOctraCoreBridge implements OctraCoreBridge {
+  final DynamicLibrary _lib;
+  late final _StringFnDart _version;
+  late final _StringFnDart _health;
+  late final _OneStringFnDart _publicSnapshot;
+  late final _HistoryFnDart _historySnapshot;
+  late final _OneStringFnDart _txDetails;
+  late final _OneStringFnDart _executePrivacyOperation;
+  late final _OneStringFnDart _recommendFee;
+  late final _OneStringFnDart _scanStealthInbox;
+  late final _OneStringFnDart _importToken;
+  late final _FreeStringDart _freeString;
+
+  FfiOctraCoreBridge._(this._lib) {
+    _version = _lib.lookupFunction<_StringFnNative, _StringFnDart>('octra_core_version');
+    _health = _lib.lookupFunction<_StringFnNative, _StringFnDart>('octra_core_health');
+    _publicSnapshot = _lib.lookupFunction<_OneStringFnNative, _OneStringFnDart>(
+      'octra_core_public_snapshot',
+    );
+    _historySnapshot = _lib.lookupFunction<_HistoryFnNative, _HistoryFnDart>(
+      'octra_core_history_snapshot',
+    );
+    _txDetails = _lib.lookupFunction<_OneStringFnNative, _OneStringFnDart>(
+      'octra_core_tx_details',
+    );
+    _executePrivacyOperation = _lib.lookupFunction<_OneStringFnNative, _OneStringFnDart>(
+      'octra_core_execute_privacy_operation',
+    );
+    _recommendFee = _lib.lookupFunction<_OneStringFnNative, _OneStringFnDart>(
+      'octra_core_recommend_fee',
+    );
+    _scanStealthInbox = _lib.lookupFunction<_OneStringFnNative, _OneStringFnDart>(
+      'octra_core_scan_stealth_inbox',
+    );
+    _importToken = _lib.lookupFunction<_OneStringFnNative, _OneStringFnDart>(
+      'octra_core_import_token',
+    );
+    _freeString = _lib.lookupFunction<_FreeStringNative, _FreeStringDart>(
+      'octra_core_free_string',
+    );
+  }
+
+  static FfiOctraCoreBridge? tryLoad() {
+    try {
+      final lib = _openLibrary();
+      return FfiOctraCoreBridge._(lib);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static DynamicLibrary _openLibrary() {
+    if (Platform.isAndroid) {
+      return DynamicLibrary.open('liboctra_core.so');
+    }
+    if (Platform.isIOS || Platform.isMacOS) {
+      return DynamicLibrary.process();
+    }
+    if (Platform.isLinux) {
+      return DynamicLibrary.open('liboctra_core.so');
+    }
+    if (Platform.isWindows) {
+      return DynamicLibrary.open('octra_core.dll');
+    }
+    throw UnsupportedError('Unsupported platform for Octra native core');
+  }
+
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Future<String> version() async {
+    final data = _callNoArg(_version);
+    return (data['version'] ?? '').toString();
+  }
+
+  @override
+  Future<Map<String, dynamic>> health() async {
+    return _callNoArg(_health);
+  }
+
+  @override
+  Future<Map<String, dynamic>> publicSnapshot(String address) async {
+    return _callWithString(_publicSnapshot, address);
+  }
+
+  @override
+  Future<List<dynamic>> historySnapshot(
+    String address, {
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final addressPtr = address.toNativeUtf8();
+    try {
+      final resultPtr = _historySnapshot(addressPtr, limit, offset);
+      final result = _readJson(resultPtr);
+      return result['transactions'] is List ? result['transactions'] as List : const [];
+    } finally {
+      calloc.free(addressPtr);
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> txDetails(String hash) async {
+    return _callWithString(_txDetails, hash);
+  }
+
+  @override
+  Future<Map<String, dynamic>> executePrivacyOperation(Map<String, dynamic> payload) async {
+    return _callWithString(_executePrivacyOperation, jsonEncode(payload));
+  }
+
+  @override
+  Future<Map<String, dynamic>> recommendFee(String operationType, int recipientCount) async {
+    return _callWithString(
+      _recommendFee,
+      jsonEncode({
+        'operation_type': operationType,
+        'recipient_count': recipientCount,
+      }),
+    );
+  }
+
+  @override
+  Future<List<dynamic>> scanStealthInbox(String address) async {
+    final data = _callWithString(_scanStealthInbox, address);
+    return data['claims'] is List ? data['claims'] as List : const [];
+  }
+
+  @override
+  Future<Map<String, dynamic>> importToken(String contractAddress) async {
+    return _callWithString(_importToken, contractAddress);
+  }
+
+  Map<String, dynamic> _callNoArg(_StringFnDart fn) {
+    return _readJson(fn());
+  }
+
+  Map<String, dynamic> _callWithString(_OneStringFnDart fn, String value) {
+    final valuePtr = value.toNativeUtf8();
+    try {
+      return _readJson(fn(valuePtr));
+    } finally {
+      calloc.free(valuePtr);
+    }
+  }
+
+  Map<String, dynamic> _readJson(Pointer<Utf8> ptr) {
+    if (ptr == nullptr) {
+      return {'ok': false, 'error': 'native core returned null'};
+    }
+    try {
+      final text = ptr.toDartString();
+      final decoded = jsonDecode(text);
+      return decoded is Map<String, dynamic>
+          ? decoded
+          : {'ok': false, 'error': 'native core returned non-object json'};
+    } finally {
+      _freeString(ptr);
+    }
+  }
+}
+
+class NoopOctraCoreBridge implements OctraCoreBridge {
+  const NoopOctraCoreBridge();
+
+  @override
+  bool get isAvailable => false;
+
+  @override
+  Future<String> version() async {
+    throw UnsupportedError('Rust bridge is not linked yet');
+  }
+
+  @override
+  Future<Map<String, dynamic>> health() async {
+    throw UnsupportedError('Rust bridge is not linked yet');
+  }
+
+  @override
+  Future<Map<String, dynamic>> publicSnapshot(String address) async {
+    throw UnsupportedError('Rust bridge is not linked yet');
+  }
+
+  @override
+  Future<List<dynamic>> historySnapshot(
+    String address, {
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    throw UnsupportedError('Rust bridge is not linked yet');
+  }
+
+  @override
+  Future<Map<String, dynamic>> txDetails(String hash) async {
+    throw UnsupportedError('Rust bridge is not linked yet');
+  }
+
+  @override
+  Future<Map<String, dynamic>> executePrivacyOperation(Map<String, dynamic> payload) async {
+    throw UnsupportedError('Rust bridge is not linked yet');
+  }
+
+  @override
+  Future<Map<String, dynamic>> recommendFee(String operationType, int recipientCount) async {
+    throw UnsupportedError('Rust bridge is not linked yet');
+  }
+
+  @override
+  Future<List<dynamic>> scanStealthInbox(String address) async {
+    throw UnsupportedError('Rust bridge is not linked yet');
+  }
+
+  @override
+  Future<Map<String, dynamic>> importToken(String contractAddress) async {
+    throw UnsupportedError('Rust bridge is not linked yet');
+  }
+}
+
+OctraCoreBridge createOctraCoreBridge() {
+  return FfiOctraCoreBridge.tryLoad() ?? const NoopOctraCoreBridge();
+}

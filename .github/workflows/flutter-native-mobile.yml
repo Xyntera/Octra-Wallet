@@ -1,0 +1,160 @@
+name: Flutter Native Mobile
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flutter-checks:
+    name: Flutter checks
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout wallet
+        uses: actions/checkout@v4
+        with:
+          path: Octra-Wallet
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        working-directory: Octra-Wallet
+        run: flutter pub get
+
+      - name: Analyze Flutter project
+        working-directory: Octra-Wallet
+        run: flutter analyze
+
+      - name: Run Flutter tests if present
+        working-directory: Octra-Wallet
+        run: |
+          if [ -d test ]; then
+            flutter test
+          else
+            echo "No Flutter tests found"
+          fi
+
+  native-host:
+    name: Native host PVAC build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout wallet
+        uses: actions/checkout@v4
+        with:
+          path: Octra-Wallet
+
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev python3
+
+      - name: Build host native core
+        working-directory: Octra-Wallet
+        run: native/cpp/build_host.sh
+
+      - name: Smoke test native core
+        working-directory: Octra-Wallet
+        run: python3 native/cpp/smoke_test.py native/cpp/target/local/liboctra_core.so
+
+      - name: Upload host native core
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-liboctra-core
+          path: Octra-Wallet/native/cpp/target/local/liboctra_core.so
+
+  android-apk:
+    name: Android APK
+    runs-on: ubuntu-24.04
+    env:
+      ANDROID_API: "24"
+      ANDROID_NDK_VERSION: "27.0.12077973"
+      OPENSSL_VERSION: "3.3.2"
+    steps:
+      - name: Checkout wallet
+        uses: actions/checkout@v4
+        with:
+          path: Octra-Wallet
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$ANDROID_NDK_VERSION"
+
+      - name: Build Android OpenSSL
+        working-directory: Octra-Wallet
+        env:
+          ANDROID_HOST_TAG: linux-x86_64
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
+          native/cpp/build_android_openssl.sh
+
+      - name: Build Android native core
+        working-directory: Octra-Wallet
+        env:
+          ANDROID_HOST_TAG: linux-x86_64
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
+          source native/cpp/target/openssl-android/env.sh
+          native/cpp/build_android.sh
+
+      - name: Install Flutter dependencies
+        working-directory: Octra-Wallet
+        run: flutter pub get
+
+      - name: Build release APK
+        working-directory: Octra-Wallet
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: octra-wallet-release-apk
+          path: Octra-Wallet/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload Android native libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-native-libs
+          path: Octra-Wallet/android/app/src/main/jniLibs
+
+  ios-native:
+    name: iOS native static libraries
+    runs-on: macos-14
+    steps:
+      - name: Checkout wallet
+        uses: actions/checkout@v4
+        with:
+          path: Octra-Wallet
+
+      - name: Install OpenSSL headers
+        run: brew install openssl@3
+
+      - name: Build iOS native archives
+        working-directory: Octra-Wallet
+        run: |
+          export OPENSSL_IOS_INCLUDE="$(brew --prefix openssl@3)/include"
+          native/cpp/build_ios.sh
+
+      - name: Upload iOS native archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-liboctra-core
+          path: Octra-Wallet/native/cpp/target/ios/**/*.a

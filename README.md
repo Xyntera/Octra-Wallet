@@ -16,30 +16,51 @@
 
 ---
 
-**Octra Wallet** is a secure, fast, and private mobile wallet for the **Octra Network**. Built with Flutter, it offers a seamless experience for managing your assets with advanced privacy features and robust security.
+**Octra Wallet** is being refocused as a Flutter client for the **Octra Network**
+with a native wallet-core bridge. The current native privacy backend uses the
+vendored `native/vendor/webcli/pvac` C++ implementation through a C ABI.
 
 ## 🚀 Features
 
 ### 🔐 Security First
-* **Non-Custodial**: You own your keys. Your mnemonic and private key never leave your device.
-* **Biometric & PIN Protection**: Secure your wallet with optional Fingerprint/Face ID and a custom PIN.
-* **Encrypted Storage**: Sensitive data is stored securely using hardware-backed encryption.
+* **Non-Custodial**: You own your keys.
+* **PIN Protection**: Local wallet access is protected with a custom PIN.
+* **Encrypted Storage**: Sensitive data is stored securely using device storage.
 
-### 💸 Powerful Transactions
-* **Send & Receive**: Fast and low-fee transactions on the Octra Network.
-* **Transaction History**: Detailed view of your past transactions with rich metadata.
-* **Staging & Nonce Management**: Intelligent handling of pending transactions.
-
-### 🕵️ Privacy (Octra Exclusive)
-* **Encrypted Balance**: Hide your holdings from the public ledger.
-* **Private Transfers**: Send funds anonymously using encrypted envelopes.
-* **Claim Transfers**: Securely claim private transfers with ephemeral keys.
+### 💸 Wallet Operations
+* **Public Balance**: View the current public balance for the active wallet.
+* **Private Balance**: Decrypt encrypted balance locally through native PVAC.
+* **Transaction History**: Detailed view of past transactions with metadata.
+* **Public Send**: Sign and submit normal OCT transfers from Flutter.
+* **Bulk Public Send**: Submit up to 5 public transfers with sequential nonces.
+* **Privacy Operations**: Register PVAC key, encrypt, decrypt, stealth send, scan, and claim.
+* **Tokens**: Discover token contracts, import a token by address, delete imported tokens, and send token transfers.
+* **Refresh Support**: Pull to refresh for latest network state.
 
 ### 🎨 Customization & UX
 * **Multiple Wallets**: Create and manage multiple wallets in one app.
 * **Customization**: Rename wallets and assign custom colors for easy identification.
 * **Smooth Animations**: A polished, premium native feel with 60fps animations.
 * **Dark Mode**: Sleek, eye-friendly interface.
+
+## Current Architecture
+
+The chosen architecture is:
+
+- Flutter UI in this repository
+- native wallet core loaded through a Flutter FFI bridge
+- vendored `native/vendor/webcli/pvac` C++ backend for PVAC privacy operations
+- `webcli` kept as the upstream behavior reference only
+- no wallet server process inside the APK
+
+The app now has native PVAC-backed privacy paths wired into Flutter. Android and
+iOS release packaging still require platform toolchains and crypto dependency
+validation.
+
+Technical docs live in [`docs/`](docs/).
+
+GitHub Actions setup is documented in
+[`docs/github-actions-build.md`](docs/github-actions-build.md).
 
 ## 📥 Download
 

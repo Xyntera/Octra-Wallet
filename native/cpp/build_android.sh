@@ -26,6 +26,7 @@ build_abi() {
   local arch_flags="$3"
   local compiler="$TOOLCHAIN/${triple}${API}-clang++"
   local c_compiler="$TOOLCHAIN/${triple}${API}-clang"
+  local cxx_shared="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$HOST_TAG/sysroot/usr/lib/$triple/libc++_shared.so"
   local out_dir="$REPO_ROOT/android/app/src/main/jniLibs/$abi"
   local obj_dir="$SCRIPT_DIR/target/android/$abi"
 
@@ -33,8 +34,13 @@ build_abi() {
     echo "missing compiler: $compiler" >&2
     exit 1
   fi
+  if [[ ! -f "$cxx_shared" ]]; then
+    echo "missing Android C++ runtime: $cxx_shared" >&2
+    exit 1
+  fi
 
   mkdir -p "$out_dir" "$obj_dir"
+  cp "$cxx_shared" "$out_dir/libc++_shared.so"
 
   "$c_compiler" -O2 $arch_flags -fPIC \
     -c "$WEBCLI_DIR/lib/tweetnacl.c" \

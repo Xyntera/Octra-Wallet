@@ -11,6 +11,7 @@ class OctraCoreSnapshot {
 
 abstract class OctraCoreBridge {
   bool get isAvailable;
+  String? get unavailableReason;
 
   Future<String> version();
   Future<Map<String, dynamic>> health();
@@ -40,6 +41,8 @@ typedef _FreeStringNative = Void Function(Pointer<Utf8>);
 typedef _FreeStringDart = void Function(Pointer<Utf8>);
 
 class FfiOctraCoreBridge implements OctraCoreBridge {
+  static String? _lastLoadError;
+
   final DynamicLibrary _lib;
   late final _StringFnDart _version;
   late final _StringFnDart _health;
@@ -83,15 +86,21 @@ class FfiOctraCoreBridge implements OctraCoreBridge {
 
   static FfiOctraCoreBridge? tryLoad() {
     try {
+      _lastLoadError = null;
       final lib = _openLibrary();
       return FfiOctraCoreBridge._(lib);
-    } catch (_) {
+    } catch (error) {
+      _lastLoadError = error.toString();
       return null;
     }
   }
 
+  static String? get lastLoadError => _lastLoadError;
+
   static DynamicLibrary _openLibrary() {
     if (Platform.isAndroid) {
+      _tryPreload('libc++_shared.so');
+      _tryPreload('libcrypto.so');
       return DynamicLibrary.open('liboctra_core.so');
     }
     if (Platform.isIOS || Platform.isMacOS) {
@@ -106,8 +115,19 @@ class FfiOctraCoreBridge implements OctraCoreBridge {
     throw UnsupportedError('Unsupported platform for Octra native core');
   }
 
+  static void _tryPreload(String name) {
+    try {
+      DynamicLibrary.open(name);
+    } catch (_) {
+      // The final liboctra_core open keeps the actionable linker error.
+    }
+  }
+
   @override
   bool get isAvailable => true;
+
+  @override
+  String? get unavailableReason => null;
 
   @override
   Future<String> version() async {
@@ -203,24 +223,33 @@ class FfiOctraCoreBridge implements OctraCoreBridge {
 }
 
 class NoopOctraCoreBridge implements OctraCoreBridge {
-  const NoopOctraCoreBridge();
+  final String reason;
+
+  const NoopOctraCoreBridge([this.reason = 'Native PVAC core is not linked']);
 
   @override
   bool get isAvailable => false;
 
   @override
+  String? get unavailableReason => reason;
+
+  UnsupportedError _unavailable() {
+    return UnsupportedError(reason);
+  }
+
+  @override
   Future<String> version() async {
-    throw UnsupportedError('Rust bridge is not linked yet');
+    throw _unavailable();
   }
 
   @override
   Future<Map<String, dynamic>> health() async {
-    throw UnsupportedError('Rust bridge is not linked yet');
+    throw _unavailable();
   }
 
   @override
   Future<Map<String, dynamic>> publicSnapshot(String address) async {
-    throw UnsupportedError('Rust bridge is not linked yet');
+    throw _unavailable();
   }
 
   @override
@@ -229,35 +258,38 @@ class NoopOctraCoreBridge implements OctraCoreBridge {
     int limit = 20,
     int offset = 0,
   }) async {
-    throw UnsupportedError('Rust bridge is not linked yet');
+    throw _unavailable();
   }
 
   @override
   Future<Map<String, dynamic>> txDetails(String hash) async {
-    throw UnsupportedError('Rust bridge is not linked yet');
+    throw _unavailable();
   }
 
   @override
   Future<Map<String, dynamic>> executePrivacyOperation(Map<String, dynamic> payload) async {
-    throw UnsupportedError('Rust bridge is not linked yet');
+    throw _unavailable();
   }
 
   @override
   Future<Map<String, dynamic>> recommendFee(String operationType, int recipientCount) async {
-    throw UnsupportedError('Rust bridge is not linked yet');
+    throw _unavailable();
   }
 
   @override
   Future<List<dynamic>> scanStealthInbox(String address) async {
-    throw UnsupportedError('Rust bridge is not linked yet');
+    throw _unavailable();
   }
 
   @override
   Future<Map<String, dynamic>> importToken(String contractAddress) async {
-    throw UnsupportedError('Rust bridge is not linked yet');
+    throw _unavailable();
   }
 }
 
 OctraCoreBridge createOctraCoreBridge() {
-  return FfiOctraCoreBridge.tryLoad() ?? const NoopOctraCoreBridge();
+  return FfiOctraCoreBridge.tryLoad() ??
+      NoopOctraCoreBridge(
+        FfiOctraCoreBridge.lastLoadError ?? 'Native PVAC core is not linked',
+      );
 }

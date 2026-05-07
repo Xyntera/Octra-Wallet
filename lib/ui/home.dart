@@ -138,8 +138,10 @@ class _DashboardTabState extends State<DashboardTab> {
                   Text(
                     walletCtrl.nativeCore.isAvailable
                         ? 'Native PVAC core active'
-                        : 'Native PVAC core unavailable',
+                        : 'Native PVAC core unavailable: '
+                            '${walletCtrl.nativeCore.unavailableReason ?? 'unknown loader error'}',
                     style: GoogleFonts.outfit(color: Colors.white54, fontSize: 13),
+                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 32),
                   Wrap(

@@ -115,6 +115,16 @@ jobs:
           source native/cpp/target/openssl-android/env.sh
           native/cpp/build_android.sh
 
+      - name: Verify Android native runtime libraries
+        working-directory: Octra-Wallet
+        run: |
+          for abi in arm64-v8a x86_64; do
+            test -f "android/app/src/main/jniLibs/$abi/liboctra_core.so"
+            test -f "android/app/src/main/jniLibs/$abi/libcrypto.so"
+            test -f "android/app/src/main/jniLibs/$abi/libc++_shared.so"
+            readelf -d "android/app/src/main/jniLibs/$abi/liboctra_core.so" | grep -E 'libcrypto\.so|libc\+\+_shared\.so'
+          done
+
       - name: Install Flutter dependencies
         working-directory: Octra-Wallet
         run: flutter pub get

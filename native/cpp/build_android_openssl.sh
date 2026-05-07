@@ -65,7 +65,6 @@ build_abi() {
 }
 
 build_abi arm64-v8a android-arm64
-build_abi armeabi-v7a android-arm
 build_abi x86_64 android-x86_64
 
 cat >"$OUT_DIR/env.sh" <<EOF

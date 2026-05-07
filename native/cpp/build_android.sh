@@ -63,5 +63,4 @@ build_abi() {
 }
 
 build_abi arm64-v8a aarch64-linux-android "-march=armv8-a+crypto"
-build_abi armeabi-v7a armv7a-linux-androideabi "-march=armv7-a+crypto"
 build_abi x86_64 x86_64-linux-android "-maes"

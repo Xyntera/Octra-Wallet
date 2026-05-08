@@ -12,6 +12,7 @@ server on the device.
 - vendored `native/vendor/webcli/pvac` C++ implementation for current PVAC operations
 - Rust remains a possible future wrapper if a Rust `pvac-rs` crate is provided
 - `dart:ffi` or a Flutter plugin bridge
+- Flutter isolate worker for long PVAC calls
 - iOS static library output
 - Android shared library output
 
@@ -68,6 +69,7 @@ evolves.
 ## Implemented Files
 
 - Dart bridge: `lib/native/octra_core_bridge.dart`
+- Dart PVAC worker: `lib/native/pvac_worker.dart`
 - Rust ABI: `native/rust/src/lib.rs`
 - C++ PVAC ABI: `native/cpp/octra_core.cpp`
 - C++ host build helper: `native/cpp/build_host.sh`
@@ -122,3 +124,11 @@ Flutter attempts to load the native library first:
 If the library is unavailable, the bridge falls back to a no-op implementation
 and the current wallet controller continues using the direct read-only network
 path for public balance and history.
+
+PVAC privacy work is not executed directly on Flutter's UI isolate. Calls such
+as `register_pubkey`, `encrypt_balance`, `decrypt_balance`,
+`stealth_prepare_send`, `stealth_scan_outputs`, and `stealth_prepare_claim` are
+queued through `PvacWorker`, which opens the native bridge inside a background
+isolate and runs one PVAC operation at a time. This avoids Android application
+not responding dialogs during range-proof generation while keeping native
+library loading simple.

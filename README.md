@@ -16,9 +16,9 @@
 
 ---
 
-**Octra Wallet** is being refocused as a Flutter client for the **Octra Network**
-with a native wallet-core bridge. The current native privacy backend uses the
-vendored `native/vendor/webcli/pvac` C++ implementation through a C ABI.
+**Octra Wallet** is a Flutter mobile wallet for the **Octra Network** with a
+native wallet-core bridge for privacy operations. PVAC crypto runs locally on
+device through native libraries packaged in the app, not through a server.
 
 ## 🚀 Features
 
@@ -30,11 +30,12 @@ vendored `native/vendor/webcli/pvac` C++ implementation through a C ABI.
 ### 💸 Wallet Operations
 * **Public Balance**: View the current public balance for the active wallet.
 * **Private Balance**: Decrypt encrypted balance locally through native PVAC.
-* **Transaction History**: Detailed view of past transactions with metadata.
+* **Transaction History**: Detailed OctraScan-backed history scoped to the active wallet.
 * **Public Send**: Sign and submit normal OCT transfers from Flutter.
 * **Bulk Public Send**: Submit up to 5 public transfers with sequential nonces.
-* **Privacy Operations**: Register PVAC key, encrypt, decrypt, stealth send, scan, and claim.
+* **Privacy Operations**: Register PVAC key, encrypt, decrypt, stealth send, scan, and claim with native PVAC.
 * **Tokens**: Discover token contracts, import a token by address, delete imported tokens, and send token transfers.
+* **Dynamic Fees**: Uses fee recommendations per operation type before submitting transactions.
 * **Refresh Support**: Pull to refresh for latest network state.
 
 ### 🎨 Customization & UX
@@ -50,21 +51,27 @@ The chosen architecture is:
 - Flutter UI in this repository
 - native wallet core loaded through a Flutter FFI bridge
 - vendored `native/vendor/webcli/pvac` C++ backend for PVAC privacy operations
+- serialized background PVAC worker using Flutter isolates to avoid UI freezes
 - `webcli` kept as the upstream behavior reference only
 - no wallet server process inside the APK
 
-The app now has native PVAC-backed privacy paths wired into Flutter. Android and
-iOS release packaging still require platform toolchains and crypto dependency
-validation.
+The Android release APK packages `liboctra_core.so`, OpenSSL `libcrypto.so`, and
+`libc++_shared.so` for supported ABIs. iOS native static archives are produced
+by CI; a committed Flutter iOS app target is still required before App Store
+packaging.
 
 Technical docs live in [`docs/`](docs/).
 
 GitHub Actions setup is documented in
 [`docs/github-actions-build.md`](docs/github-actions-build.md).
 
+Release notes are tracked in
+[`docs/release-notes-v1.0.0.md`](docs/release-notes-v1.0.0.md).
+
 ## 📥 Download
 
-Get the latest APK from the [Releases Page](https://github.com/Xyntera/Octra-Wallet/releases).
+Get the latest production APK from the
+[Releases Page](https://github.com/Xyntera/Octra-Wallet/releases).
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Xyntera/Octra-Wallet/main/assets/splash.png" width="300" alt="App Splash Screen" />
@@ -81,7 +88,7 @@ Get the latest APK from the [Releases Page](https://github.com/Xyntera/Octra-Wal
 
 1.  **Clone the repository**
     ```bash
-    git clone [https://github.com/Xyntera/Octra-Wallet.git](https://github.com/Xyntera/Octra-Wallet.git)
+    git clone https://github.com/Xyntera/Octra-Wallet.git
     cd Octra-Wallet
     ```
 
@@ -104,6 +111,7 @@ Get the latest APK from the [Releases Page](https://github.com/Xyntera/Octra-Wal
 ## 🏗️ Tech Stack
 * **Framework**: Flutter (Dart)
 * **Cryptography**: `bip39`, `cryptography` (Ed25519, SHA256)
+* **Native Privacy Core**: C++ PVAC backend exposed through a C ABI and Dart FFI
 * **Storage**: `flutter_secure_storage`
 * **State Management**: `Provider`
 * **UI**: Cupertino (iOS-style) & Material
@@ -116,5 +124,5 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 <div align="center">
-  <sub>Built by <a href="https://ouqro.tech">Ouqro.tech</a> | Code by Xyntera</sub>
+  <sub>Octra Wallet | <a href="https://octrawallet.app">octrawallet.app</a> | By Glaqz</sub>
 </div>

@@ -9,6 +9,7 @@ now:
 - native wallet core exposed through a stable C ABI
 - vendored `native/vendor/webcli/pvac` C++ backend for current PVAC operations
 - `dart:ffi` or Flutter plugin bridge
+- serialized background isolate execution for long PVAC calls
 - no local server process
 - iOS static library output
 - Android shared library output
@@ -57,6 +58,15 @@ The native side should own:
 - bulk transaction assembly
 - recommended fee calculation
 
+The Flutter side owns:
+
+- navigation and presentation
+- wallet selection and local state
+- secure storage integration
+- transaction confirmation UI
+- dynamic fee display before submission
+- progress feedback for long native PVAC work
+
 ## Flutter client target
 
 Flutter remains the UI shell, while the native library becomes the wallet core
@@ -74,7 +84,8 @@ building blocks available:
 ## What we are changing now
 
 - keep the existing Octra visual style
-- remove private actions from the visible UI
+- keep private actions visible when native PVAC is available
 - stop using temporary server-style client shims
-- introduce a native bridge boundary for wallet-core work
+- use a native bridge boundary for wallet-core work
+- run PVAC proof/decrypt work outside the UI isolate
 - keep the app in-place in this repository

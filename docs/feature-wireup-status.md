@@ -1,5 +1,22 @@
 # Feature Wire-Up Status
 
+## Production Release Status
+
+The current Android release build has native PVAC packaged and validated through
+GitHub Actions. Heavy PVAC operations are executed through a serialized Flutter
+isolate worker so range proofs and decrypt/proof preparation do not block the
+main UI isolate.
+
+Release validation completed for:
+
+- Flutter analysis
+- host native PVAC build and smoke test
+- Android OpenSSL build
+- Android native `liboctra_core.so` build
+- Android release APK build
+- APK runtime library verification for `arm64-v8a` and `x86_64`
+- iOS native static archive build
+
 ## Wired Now
 
 - Direct Octra JSON-RPC client path:
@@ -18,6 +35,7 @@
   - vendored `native/vendor/webcli/pvac` C++ implementation
   - `native/cpp/octra_core.cpp` C ABI wrapper
   - Flutter `dart:ffi` bridge
+  - serialized `PvacWorker` background isolate execution
   - native stealth helpers from `native/vendor/webcli/lib/stealth.hpp`
 
 - Flutter wallet controller:
@@ -28,6 +46,7 @@
   - PVAC pubkey generation and registration
   - native encrypt-balance payload generation
   - native decrypt-balance payload generation
+  - native PVAC calls off the UI isolate
   - canonical transaction signing compatible with `webcli`
   - signed `octra_submit` for encrypt/decrypt transactions
   - stealth transfer preparation
@@ -53,8 +72,9 @@
   - token list/import/send sheet
   - swipe-to-delete imported token entries
   - PIN/biometric confirmation before public send, bulk public send, encrypt, decrypt, private send, and claim
+  - full-screen PVAC progress overlay during long native privacy work
 
-## Newly Wired Native Stealth Features
+## Native Stealth Features
 
 - `derive_view_keypair`
 - `stealth_prepare_send`
@@ -93,20 +113,19 @@ Smoke-tested:
 
 The generated encrypted cipher decrypted back to the original test amount.
 
-Stealth send preparation is wired, but full proof generation can be slow because
-it requires multiple range proofs. A long host smoke test exceeded the useful
-interactive wait window, so this path needs dedicated performance testing.
+Stealth send preparation is wired. Because full proof generation can be CPU
+intensive, the Flutter app now runs it through the PVAC worker instead of the UI
+thread.
 
-## Still Not Fully Wired
+## Still Open
 
-- Stealth send proof-generation performance validation
 - Bulk private transactions
 - Token private operations
 - DApp browser/provider injection
 - Address book
 - Push notifications
 - Biometric confirmation for future DApp-provider flows
-- Android/iOS native packaging validation on real toolchains
+- committed Flutter iOS app target and App Store packaging
 
 ## Transaction Confirmation Status
 
@@ -133,7 +152,8 @@ Not covered yet:
 
 ## Android/iOS Blocker
 
-Android native `.so` outputs require Android NDK:
+Android native `.so` outputs are built in CI with Android NDK and packaged into
+the APK. Local Android native builds require:
 
 ```bash
 export ANDROID_NDK_HOME=/path/to/android-ndk
@@ -149,5 +169,6 @@ export OPENSSL_IOS_INCLUDE=/path/to/openssl/include
 native/cpp/build_ios.sh
 ```
 
-The final iOS app target must link a matching iOS `libcrypto` or OpenSSL
-XCFramework because stealth helpers use AES-GCM.
+The final iOS app target must link the generated `liboctra_core.a` plus a
+matching iOS `libcrypto` or OpenSSL XCFramework because stealth helpers use
+AES-GCM.

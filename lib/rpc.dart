@@ -135,6 +135,18 @@ class RpcClient {
     return null;
   }
 
+  Future<Map<String, dynamic>?> getRecommendedFee(String operationType) async {
+    final rpcRes = await rpcCall(
+      'octra_recommendedFee',
+      [operationType],
+      timeoutSeconds: 10,
+    );
+    final body = rpcResult(rpcRes);
+    if (body is Map<String, dynamic>) return body;
+    if (body is Map) return Map<String, dynamic>.from(body);
+    return null;
+  }
+
   Future<Map<String, dynamic>> getBalanceAndNonce(String address) async {
     final rpcRes = await rpcCall('octra_balance', [address]);
     final rpcBody = rpcResult(rpcRes);

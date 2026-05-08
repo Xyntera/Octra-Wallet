@@ -66,6 +66,9 @@ class WalletController extends ChangeNotifier {
   List<Map<String, dynamic>> history = [];
   List<Map<String, dynamic>> tokens = [];
   final Map<String, Map<String, String>> _tokenMetaCache = {};
+  final Map<String, Map<String, dynamic>> _feeCache = {};
+  final Set<String> _pvacRegistrationInFlight = {};
+  DateTime? _feeCacheAt;
   bool isLoading = false;
 
   bool get hasWallet => currentWallet != null;
@@ -80,7 +83,13 @@ class WalletController extends ChangeNotifier {
       final jsonStr = await _storage.read(key: 'wallets');
       if (jsonStr != null) {
         final List<dynamic> list = jsonDecode(jsonStr);
-        wallets = list.map((e) => Wallet.fromJson(e)).toList();
+        wallets = await _repairWalletList(
+          list
+              .whereType<Map>()
+              .map((e) => Wallet.fromJson(Map<String, dynamic>.from(e)))
+              .toList(),
+        );
+        await _saveWallets();
         if (wallets.isNotEmpty) {
           // Load last selected
           final lastAddr = await _storage.read(key: 'last_selected_wallet');
@@ -90,6 +99,7 @@ class WalletController extends ChangeNotifier {
             currentWallet = wallets.first; // Default to first
           }
           refresh(); // Background update (fixes startup lag)
+          registerCurrentPvacInBackground();
         }
       }
     } catch (e) {
@@ -108,10 +118,19 @@ class WalletController extends ChangeNotifier {
   }
 
   Future<void> selectWallet(Wallet w) async {
-    currentWallet = w;
-    await _storage.write(key: 'last_selected_wallet', value: w.address);
+    final repaired = await _validatedWallet(w);
+    currentWallet = repaired;
+    final index = wallets.indexWhere((item) =>
+        item.address == w.address ||
+        item.privateKeyBase64 == w.privateKeyBase64);
+    if (index != -1 && wallets[index].address != repaired.address) {
+      wallets[index] = repaired;
+      await _saveWallets();
+    }
+    await _storage.write(key: 'last_selected_wallet', value: repaired.address);
     notifyListeners();
     await refresh();
+    registerCurrentPvacInBackground();
   }
 
   /// GENERATE NEW (Returns data for UI Backup first, DOES NOT SAVE YET)
@@ -122,6 +141,16 @@ class WalletController extends ChangeNotifier {
   /// SAVE IMPORTED/GENERATED WALLET
   Future<void> addWallet(String address, String privateKeyBase64,
       [String? mnemonic]) async {
+    final repairedInput = await _validatedWallet(Wallet(
+      address: address,
+      privateKeyBase64: privateKeyBase64,
+      mnemonic: mnemonic?.isEmpty == true ? null : mnemonic,
+      name: "Wallet ${wallets.length + 1}",
+    ));
+    address = repairedInput.address;
+    privateKeyBase64 = repairedInput.privateKeyBase64;
+    mnemonic = repairedInput.mnemonic;
+
     // Check duplicate
     if (wallets.any((w) => w.address == address)) {
       // Just switch to it
@@ -156,6 +185,7 @@ class WalletController extends ChangeNotifier {
     }
     notifyListeners();
     await refresh();
+    registerCurrentPvacInBackground();
   }
 
   Future<void> updateWallet(String address, {String? name, int? color}) async {
@@ -250,6 +280,52 @@ class WalletController extends ChangeNotifier {
     return base64Decode(clean);
   }
 
+  Future<List<Wallet>> _repairWalletList(List<Wallet> input) async {
+    final repaired = <Wallet>[];
+    final seen = <String>{};
+    for (final wallet in input) {
+      try {
+        final checked = await _validatedWallet(wallet);
+        if (seen.add(checked.address)) repaired.add(checked);
+      } catch (e) {
+        print("Skipping invalid wallet entry: $e");
+      }
+    }
+    return repaired;
+  }
+
+  Future<Wallet> _validatedWallet(Wallet wallet) async {
+    final derivedAddress = await _deriveAddressFromPrivateKey(wallet);
+    if (derivedAddress == wallet.address) return wallet;
+    print(
+        "Wallet address repaired: stored ${wallet.address}, key derives $derivedAddress");
+    return Wallet(
+      address: derivedAddress,
+      privateKeyBase64: wallet.privateKeyBase64,
+      mnemonic: wallet.mnemonic,
+      name: wallet.name,
+      color: wallet.color,
+    );
+  }
+
+  Future<String> _deriveAddressFromPrivateKey(Wallet wallet) async {
+    final privKeyBytes = base64Decode(wallet.privateKeyBase64);
+    if (privKeyBytes.length != 32) {
+      throw StateError('Invalid private key length');
+    }
+    final keyPair = await Ed25519().newKeyPairFromSeed(privKeyBytes);
+    final pubKey = await keyPair.extractPublicKey();
+    return octraAddressFromPubKey(Uint8List.fromList(pubKey.bytes));
+  }
+
+  Future<bool> _walletMatchesPrivateKey(Wallet wallet) async {
+    try {
+      return await _deriveAddressFromPrivateKey(wallet) == wallet.address;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// REFRESH ALL DATA
   Future<void> refresh() async {
     if (currentWallet == null) return;
@@ -269,6 +345,7 @@ class WalletController extends ChangeNotifier {
 
       final bn = results[0];
       final staging = results[1];
+      if (currentWallet?.address != wallet.address) return;
 
       publicBalance = bn['balance'];
       nonce = bn['nonce'];
@@ -456,6 +533,119 @@ class WalletController extends ChangeNotifier {
     return symbol.isEmpty ? digits : '$digits $symbol';
   }
 
+  Future<Map<String, dynamic>> recommendedFee(
+    String operationType, {
+    bool forceRefresh = false,
+  }) async {
+    final now = DateTime.now();
+    final cacheFresh = _feeCacheAt != null &&
+        now.difference(_feeCacheAt!) < const Duration(seconds: 30);
+    if (!forceRefresh && cacheFresh && _feeCache.containsKey(operationType)) {
+      return _feeCache[operationType]!;
+    }
+
+    try {
+      final live = await rpc.getRecommendedFee(operationType);
+      if (live != null && live.isNotEmpty) {
+        final normalized = _normalizeFee(operationType, live);
+        _feeCache[operationType] = normalized;
+        _feeCacheAt = now;
+        return normalized;
+      }
+    } catch (e) {
+      print("Fee fetch error for $operationType: $e");
+    }
+
+    final fallback = _fallbackFee(operationType);
+    _feeCache[operationType] = fallback;
+    _feeCacheAt = now;
+    return fallback;
+  }
+
+  Future<String> recommendedFeeRaw(String operationType) async {
+    final fee = await recommendedFee(operationType);
+    return (fee['recommended'] ?? fee['minimum'] ?? '1000').toString();
+  }
+
+  Map<String, dynamic> _normalizeFee(
+    String operationType,
+    Map<String, dynamic> fee,
+  ) {
+    final fallback = _fallbackFee(operationType);
+    String value(String key) {
+      final raw = fee[key] ?? fallback[key] ?? '1000';
+      final parsed = int.tryParse(raw.toString());
+      if (parsed == null || parsed <= 0) return fallback[key].toString();
+      return parsed.toString();
+    }
+
+    return {
+      ...fee,
+      'minimum': value('minimum'),
+      'base_fee': value('base_fee'),
+      'recommended': value('recommended'),
+      'fast': value('fast'),
+      'source': 'octra_recommendedFee',
+    };
+  }
+
+  Map<String, dynamic> _fallbackFee(String operationType) {
+    const table = {
+      'standard': {
+        'minimum': '1000',
+        'base_fee': '1000',
+        'recommended': '10000',
+        'fast': '30000',
+      },
+      'call': {
+        'minimum': '1000',
+        'base_fee': '1000',
+        'recommended': '1000',
+        'fast': '2000',
+      },
+      'deploy': {
+        'minimum': '200000',
+        'base_fee': '200000',
+        'recommended': '200000',
+        'fast': '400000',
+      },
+      'encrypt': {
+        'minimum': '5000000',
+        'base_fee': '3000',
+        'recommended': '5300000',
+        'fast': '10600000',
+      },
+      'decrypt': {
+        'minimum': '5000000',
+        'base_fee': '3000',
+        'recommended': '5300000',
+        'fast': '10600000',
+      },
+      'stealth': {
+        'minimum': '5000000',
+        'base_fee': '5000000',
+        'recommended': '5500000',
+        'fast': '11000000',
+      },
+      'claim': {
+        'minimum': '3000',
+        'base_fee': '3000',
+        'recommended': '3000',
+        'fast': '6000',
+      },
+    };
+    return Map<String, dynamic>.from(
+      table[operationType] ?? table['standard']!,
+    );
+  }
+
+  String formatFeeRaw(String raw) {
+    final value = (int.tryParse(raw) ?? 0) / kMicro;
+    if (value == 0) return '0 OCT';
+    if (value > 0 && value < 0.001) return '< 0.001 OCT';
+    return '${value.toStringAsFixed(6).replaceFirst(RegExp(r'\.?0+$'), '')} OCT';
+  }
+
   Future<Map<String, dynamic>?> getTransactionFullDetails(String hash) async {
     final res = await rpc.getTx(hash);
     final body = rpc.rpcResult(res);
@@ -496,13 +686,19 @@ class WalletController extends ChangeNotifier {
       }
     }
 
+    if (!await _walletMatchesPrivateKey(wallet)) {
+      return RpcResponse(
+          0, "Selected wallet address does not match its private key", null);
+    }
+
     final txNonce = currentNonce + 1;
+    final feeRaw = await recommendedFeeRaw('standard');
     final payload = <String, dynamic>{
       "from": wallet.address,
       "to_": to, // Note: cli.py uses 'to_' (line 502)
       "amount": (amount * 1000000).toInt().toString(),
       "nonce": txNonce,
-      "ou": amount < 1000 ? "10000" : "30000",
+      "ou": feeRaw,
       "timestamp": (DateTime.now().millisecondsSinceEpoch / 1000).toDouble(),
       "op_type": "standard",
     };
@@ -533,6 +729,7 @@ class WalletController extends ChangeNotifier {
 
     await refresh();
     final startNonce = await _nextNonce(wallet);
+    final feeRaw = await recommendedFeeRaw('standard');
     final responses = <RpcResponse>[];
 
     for (var i = 0; i < filtered.length; i++) {
@@ -545,7 +742,7 @@ class WalletController extends ChangeNotifier {
         "to_": item['to']!.trim(),
         "amount": amountRaw.toString(),
         "nonce": startNonce + i,
-        "ou": amount < 1000 ? "10000" : "30000",
+        "ou": feeRaw,
         "timestamp": (DateTime.now().millisecondsSinceEpoch / 1000).toDouble(),
         "op_type": "standard",
       };
@@ -651,12 +848,13 @@ class WalletController extends ChangeNotifier {
     }
 
     final txNonce = await _nextNonce(wallet);
+    final feeRaw = await recommendedFeeRaw('call');
     final payload = <String, dynamic>{
       "from": wallet.address,
       "to_": tokenAddress,
       "amount": "0",
       "nonce": txNonce,
-      "ou": "1000",
+      "ou": feeRaw,
       "timestamp": (DateTime.now().millisecondsSinceEpoch / 1000).toDouble(),
       "op_type": "call",
       "encrypted_data": "transfer",
@@ -680,7 +878,7 @@ class WalletController extends ChangeNotifier {
       return RpcResponse(0, "Native PVAC core is not available", null);
     }
 
-    final registered = await ensurePvacRegistered();
+    final registered = await ensurePvacRegistered(wallet: wallet);
     if (!registered) {
       return RpcResponse(0, "PVAC registration failed", null);
     }
@@ -696,7 +894,7 @@ class WalletController extends ChangeNotifier {
       amountRaw: amountRaw,
       opType: 'encrypt',
       encryptedData: encryptedData,
-      ou: '10000',
+      ou: await recommendedFeeRaw('encrypt'),
     );
 
     final res = await rpc.sendTransaction(tx);
@@ -725,7 +923,7 @@ class WalletController extends ChangeNotifier {
       return RpcResponse(0, "No encrypted cipher available", null);
     }
 
-    final registered = await ensurePvacRegistered();
+    final registered = await ensurePvacRegistered(wallet: wallet);
     if (!registered) {
       return RpcResponse(0, "PVAC registration failed", null);
     }
@@ -743,7 +941,7 @@ class WalletController extends ChangeNotifier {
       amountRaw: amountRaw,
       opType: 'decrypt',
       encryptedData: encryptedData,
-      ou: '10000',
+      ou: await recommendedFeeRaw('decrypt'),
     );
 
     final res = await rpc.sendTransaction(tx);
@@ -776,7 +974,7 @@ class WalletController extends ChangeNotifier {
       return RpcResponse(0, "No encrypted cipher available", null);
     }
 
-    final registered = await ensurePvacRegistered();
+    final registered = await ensurePvacRegistered(wallet: wallet);
     if (!registered) {
       return RpcResponse(0, "PVAC registration failed", null);
     }
@@ -796,7 +994,7 @@ class WalletController extends ChangeNotifier {
       amountRaw: 0,
       opType: 'stealth',
       encryptedData: jsonEncode(stealth['encrypted_data']),
-      ou: '5000',
+      ou: await recommendedFeeRaw('stealth'),
     );
     final res = await rpc.sendTransaction(tx);
     await refresh();
@@ -849,7 +1047,7 @@ class WalletController extends ChangeNotifier {
       return RpcResponse(0, "Invalid claim payload", null);
     }
 
-    final registered = await ensurePvacRegistered();
+    final registered = await ensurePvacRegistered(wallet: wallet);
     if (!registered) {
       return RpcResponse(0, "PVAC registration failed", null);
     }
@@ -868,15 +1066,31 @@ class WalletController extends ChangeNotifier {
       amountRaw: 0,
       opType: 'claim',
       encryptedData: jsonEncode(prepared['encrypted_data']),
-      ou: '3000',
+      ou: await recommendedFeeRaw('claim'),
     );
     final res = await rpc.sendTransaction(tx);
     await refresh();
     return res;
   }
 
-  Future<bool> ensurePvacRegistered() async {
+  void registerCurrentPvacInBackground() {
     final wallet = currentWallet;
+    if (wallet == null || !nativeCore.isAvailable) return;
+    if (_pvacRegistrationInFlight.contains(wallet.address)) return;
+    _pvacRegistrationInFlight.add(wallet.address);
+    Future.delayed(const Duration(milliseconds: 350), () async {
+      try {
+        await ensurePvacRegistered(wallet: wallet);
+      } catch (e) {
+        print("Background PVAC registration failed for ${wallet.address}: $e");
+      } finally {
+        _pvacRegistrationInFlight.remove(wallet.address);
+      }
+    });
+  }
+
+  Future<bool> ensurePvacRegistered({Wallet? wallet}) async {
+    wallet ??= currentWallet;
     if (wallet == null || !nativeCore.isAvailable) return false;
 
     final registration = await pvac.registerPubkey(
@@ -1101,6 +1315,10 @@ class WalletController extends ChangeNotifier {
     Wallet wallet,
     Map<String, dynamic> payload,
   ) async {
+    if (!await _walletMatchesPrivateKey(wallet)) {
+      throw StateError(
+          'Selected wallet address does not match its private key');
+    }
     final signature =
         await _signMessageBase64(wallet, _canonicalTxJson(payload));
     final publicKeyBase64 = await _walletPublicKeyBase64(wallet);

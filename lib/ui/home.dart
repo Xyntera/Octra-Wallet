@@ -30,6 +30,51 @@ Future<bool> _confirmWalletAction(BuildContext context) async {
   return result == true;
 }
 
+Future<bool> _confirmFeeAndSecurity(
+  BuildContext context, {
+  required String title,
+  required String feeOperation,
+  String? amountLabel,
+  double? publicAmount,
+}) async {
+  final wallet = context.read<WalletController>();
+  final feeRaw = await wallet.recommendedFeeRaw(feeOperation);
+  final feeOct = (int.tryParse(feeRaw) ?? 0) / _octMicro;
+  final totalLabel = publicAmount == null
+      ? null
+      : '${(publicAmount + feeOct).toStringAsFixed(6).replaceFirst(RegExp(r'\.?0+$'), '')} OCT';
+  if (!context.mounted) return false;
+
+  final confirmed = await showCupertinoDialog<bool>(
+    context: context,
+    builder: (ctx) => CupertinoAlertDialog(
+      title: Text(title),
+      content: Column(
+        children: [
+          if (amountLabel != null) Text('Amount: $amountLabel'),
+          Text('Network fee: ${wallet.formatFeeRaw(feeRaw)}'),
+          Text('Fee raw: $feeRaw ou'),
+          if (totalLabel != null) Text('Total public cost: $totalLabel'),
+        ],
+      ),
+      actions: [
+        CupertinoDialogAction(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
+        ),
+        CupertinoDialogAction(
+          isDefaultAction: true,
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Continue'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return false;
+  if (!context.mounted) return false;
+  return _confirmWalletAction(context);
+}
+
 Future<void> _openExternalUrl(String url) async {
   final uri = Uri.parse(url);
   await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -884,8 +929,13 @@ class _DashboardTabState extends State<DashboardTab> {
                                 isSubmitting = true;
                               });
                               try {
-                                final confirmed =
-                                    await _confirmWalletAction(parentContext);
+                                final confirmed = await _confirmFeeAndSecurity(
+                                  parentContext,
+                                  title: 'Confirm Public Send',
+                                  feeOperation: 'standard',
+                                  amountLabel: '$amount OCT',
+                                  publicAmount: amount,
+                                );
                                 if (!confirmed) {
                                   setState(() {
                                     isSubmitting = false;
@@ -988,8 +1038,15 @@ class _DashboardTabState extends State<DashboardTab> {
                                 isSubmitting = true;
                               });
                               try {
-                                final confirmed =
-                                    await _confirmWalletAction(parentContext);
+                                final confirmed = await _confirmFeeAndSecurity(
+                                  parentContext,
+                                  title: encrypt
+                                      ? 'Confirm Encrypt'
+                                      : 'Confirm Decrypt',
+                                  feeOperation: encrypt ? 'encrypt' : 'decrypt',
+                                  amountLabel: '$amount OCT',
+                                  publicAmount: encrypt ? amount : null,
+                                );
                                 if (!confirmed) {
                                   setState(() {
                                     isSubmitting = false;
@@ -1111,8 +1168,12 @@ class _DashboardTabState extends State<DashboardTab> {
                                 isSubmitting = true;
                               });
                               try {
-                                final confirmed =
-                                    await _confirmWalletAction(parentContext);
+                                final confirmed = await _confirmFeeAndSecurity(
+                                  parentContext,
+                                  title: 'Confirm Private Send',
+                                  feeOperation: 'stealth',
+                                  amountLabel: '$amount private OCT',
+                                );
                                 if (!confirmed) {
                                   setState(() {
                                     isSubmitting = false;
@@ -1267,8 +1328,21 @@ class _DashboardTabState extends State<DashboardTab> {
                               isSubmitting = true;
                             });
                             try {
-                              final confirmed =
-                                  await _confirmWalletAction(parentContext);
+                              final totalAmount = recipients.fold<double>(
+                                0,
+                                (sum, item) =>
+                                    sum +
+                                    (double.tryParse(item['amount'] ?? '') ??
+                                        0),
+                              );
+                              final confirmed = await _confirmFeeAndSecurity(
+                                parentContext,
+                                title: 'Confirm Bulk Send',
+                                feeOperation: 'standard',
+                                amountLabel:
+                                    '$totalAmount OCT across ${recipients.length} recipient(s)',
+                                publicAmount: totalAmount,
+                              );
                               if (!confirmed) {
                                 setState(() {
                                   isSubmitting = false;
@@ -1316,14 +1390,12 @@ class _DashboardTabState extends State<DashboardTab> {
 
   Future<void> _registerPvacKey(BuildContext context) async {
     final wallet = context.read<WalletController>();
-    try {
-      final ok = await wallet.ensurePvacRegistered();
-      if (context.mounted) {
-        _showResultDialog(context,
-            ok ? 'PVAC key registered' : 'PVAC key registration failed');
-      }
-    } catch (e) {
-      if (context.mounted) _showResultDialog(context, e.toString());
+    wallet.registerCurrentPvacInBackground();
+    if (context.mounted) {
+      _showResultDialog(
+        context,
+        'PVAC registration is running in the background. It is required once per wallet address.',
+      );
     }
   }
 
@@ -1420,7 +1492,13 @@ class _StealthClaimsSheetState extends State<_StealthClaimsSheet> {
     final id = claim['id']?.toString() ?? '';
     if (id.isEmpty) return;
 
-    final confirmed = await _confirmWalletAction(context);
+    final amountRaw = int.tryParse(claim['amount_raw']?.toString() ?? '0') ?? 0;
+    final confirmed = await _confirmFeeAndSecurity(
+      context,
+      title: 'Confirm Stealth Claim',
+      feeOperation: 'claim',
+      amountLabel: '${amountRaw / _octMicro} private OCT',
+    );
     if (!confirmed) return;
     if (!mounted) return;
 
@@ -1693,8 +1771,13 @@ class _TokensSheetState extends State<_TokensSheet> {
                             isSubmitting = true;
                           });
                           try {
-                            final confirmed =
-                                await _confirmWalletAction(parentContext);
+                            final confirmed = await _confirmFeeAndSecurity(
+                              parentContext,
+                              title: 'Confirm Token Send',
+                              feeOperation: 'call',
+                              amountLabel:
+                                  '${amountController.text.trim()} ${token['symbol'] ?? 'Token'}',
+                            );
                             if (!confirmed) {
                               setState(() {
                                 isSubmitting = false;

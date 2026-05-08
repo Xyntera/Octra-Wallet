@@ -2385,6 +2385,10 @@ class HistoryTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final walletCtrl = context.watch<WalletController>();
+    final currentAddress = walletCtrl.currentWallet?.address;
+    final visibleHistory = walletCtrl.historyWalletAddress == currentAddress
+        ? walletCtrl.history
+        : <Map<String, dynamic>>[];
     return CupertinoPageScaffold(
       backgroundColor: Colors.black,
       child: CustomScrollView(
@@ -2397,7 +2401,7 @@ class HistoryTab extends StatelessWidget {
             const SliverFillRemaining(
               child: Center(child: CupertinoActivityIndicator()),
             )
-          else if (walletCtrl.history.isEmpty)
+          else if (visibleHistory.isEmpty)
             const SliverFillRemaining(
               child: Center(
                 child: Text('No transactions',
@@ -2408,10 +2412,10 @@ class HistoryTab extends StatelessWidget {
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
-                  final tx = walletCtrl.history[index];
+                  final tx = visibleHistory[index];
                   return _buildTransactionRow(context, tx);
                 },
-                childCount: walletCtrl.history.length,
+                childCount: visibleHistory.length,
               ),
             ),
         ],

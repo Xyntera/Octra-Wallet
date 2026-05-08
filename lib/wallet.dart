@@ -64,11 +64,13 @@ class WalletController extends ChangeNotifier {
 
   // History
   List<Map<String, dynamic>> history = [];
+  String? historyWalletAddress;
   List<Map<String, dynamic>> tokens = [];
   final Map<String, Map<String, String>> _tokenMetaCache = {};
   final Map<String, Map<String, dynamic>> _feeCache = {};
   final Set<String> _pvacRegistrationInFlight = {};
   DateTime? _feeCacheAt;
+  int _refreshSerial = 0;
   bool isLoading = false;
 
   bool get hasWallet => currentWallet != null;
@@ -119,7 +121,9 @@ class WalletController extends ChangeNotifier {
 
   Future<void> selectWallet(Wallet w) async {
     final repaired = await _validatedWallet(w);
+    _refreshSerial++;
     currentWallet = repaired;
+    _clearWalletScopedState();
     final index = wallets.indexWhere((item) =>
         item.address == w.address ||
         item.privateKeyBase64 == w.privateKeyBase64);
@@ -154,7 +158,9 @@ class WalletController extends ChangeNotifier {
     // Check duplicate
     if (wallets.any((w) => w.address == address)) {
       // Just switch to it
+      _refreshSerial++;
       currentWallet = wallets.firstWhere((w) => w.address == address);
+      _clearWalletScopedState();
     } else {
       final name = "Wallet ${wallets.length + 1}";
       final colors = [
@@ -180,7 +186,9 @@ class WalletController extends ChangeNotifier {
           name: name,
           color: color);
       wallets.add(newWallet);
+      _refreshSerial++;
       currentWallet = newWallet;
+      _clearWalletScopedState();
       await _saveWallets();
     }
     notifyListeners();
@@ -213,13 +221,16 @@ class WalletController extends ChangeNotifier {
     wallets.removeWhere((w) => w.address == address);
 
     if (currentWallet?.address == address) {
+      _refreshSerial++;
       if (wallets.isNotEmpty) {
         currentWallet = wallets.first;
+        _clearWalletScopedState();
         _storage.write(
             key: 'last_selected_wallet', value: currentWallet!.address);
         refresh();
       } else {
         currentWallet = null;
+        _clearWalletScopedState();
         _storage.delete(key: 'last_selected_wallet');
       }
     }
@@ -326,11 +337,28 @@ class WalletController extends ChangeNotifier {
     }
   }
 
+  void _clearWalletScopedState() {
+    publicBalance = 0.0;
+    nonce = 0;
+    encryptedBalance = 0.0;
+    encryptedRaw = 0;
+    pendingPrivateTransfers = [];
+    history = [];
+    historyWalletAddress = currentWallet?.address;
+    tokens = [];
+  }
+
+  bool _isActiveWallet(Wallet wallet) {
+    return currentWallet?.address == wallet.address;
+  }
+
   /// REFRESH ALL DATA
   Future<void> refresh() async {
     if (currentWallet == null) return;
     final wallet = currentWallet!; // Use local var for thread safetyish
+    final refreshId = ++_refreshSerial;
     isLoading = true;
+    historyWalletAddress = wallet.address;
     notifyListeners();
 
     try {
@@ -345,7 +373,7 @@ class WalletController extends ChangeNotifier {
 
       final bn = results[0];
       final staging = results[1];
-      if (currentWallet?.address != wallet.address) return;
+      if (!_isActiveRefresh(refreshId, wallet)) return;
 
       publicBalance = bn['balance'];
       nonce = bn['nonce'];
@@ -364,18 +392,24 @@ class WalletController extends ChangeNotifier {
       }
 
       await _fetchEncryptedBalance(wallet);
-      await _fetchHistory(limit: 20, offset: 0);
+      if (!_isActiveRefresh(refreshId, wallet)) return;
+      await _fetchHistory(wallet, limit: 20, offset: 0);
     } catch (e) {
       print("Refresh error: $e");
     } finally {
-      isLoading = false;
-      notifyListeners();
+      if (_isActiveRefresh(refreshId, wallet)) {
+        isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
-  Future<void> _fetchHistory({int limit = 20, int offset = 0}) async {
-    if (currentWallet == null) return;
-    final wallet = currentWallet!;
+  bool _isActiveRefresh(int refreshId, Wallet wallet) {
+    return refreshId == _refreshSerial && _isActiveWallet(wallet);
+  }
+
+  Future<void> _fetchHistory(Wallet wallet,
+      {int limit = 20, int offset = 0}) async {
     try {
       final res = await rpc.getTransactionsByAddress(
         wallet.address,
@@ -383,13 +417,22 @@ class WalletController extends ChangeNotifier {
         offset: offset,
       );
       final txList = res?['transactions'] ?? res?['recent_transactions'];
+      if (currentWallet?.address != wallet.address) return;
       if (txList is List) {
         history = await Future.wait(
           txList.whereType<Map>().map((tx) => _normalizeHistoryTx(
               Map<String, dynamic>.from(tx), wallet.address)),
         );
+        historyWalletAddress = wallet.address;
+      } else {
+        history = [];
+        historyWalletAddress = wallet.address;
       }
     } catch (e) {
+      if (currentWallet?.address == wallet.address) {
+        history = [];
+        historyWalletAddress = wallet.address;
+      }
       print("History fetch error: $e");
     }
   }
@@ -1202,6 +1245,7 @@ class WalletController extends ChangeNotifier {
   }
 
   Future<void> _fetchEncryptedBalance(Wallet wallet) async {
+    if (!_isActiveWallet(wallet)) return;
     encryptedBalance = 0.0;
     encryptedRaw = 0;
     pendingPrivateTransfers = [];
@@ -1219,6 +1263,7 @@ class WalletController extends ChangeNotifier {
         signature,
         publicKeyBase64,
       );
+      if (!_isActiveWallet(wallet)) return;
       final cipher = result?['cipher']?.toString() ??
           result?['encrypted_balance']?.toString() ??
           '0';
@@ -1228,6 +1273,7 @@ class WalletController extends ChangeNotifier {
         privateKeyBase64: wallet.privateKeyBase64,
         cipher: cipher,
       );
+      if (!_isActiveWallet(wallet)) return;
       final raw = int.tryParse(decrypted['amount_raw']?.toString() ?? '0') ?? 0;
       encryptedRaw = raw < 0 ? 0 : raw;
       encryptedBalance = encryptedRaw / 1000000.0;

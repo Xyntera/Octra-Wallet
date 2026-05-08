@@ -31,59 +31,30 @@ class _PinScreenState extends State<PinScreen> {
 
   Future<void> _checkBiometrics() async {
     try {
-      // Check if device supports biometrics
-      final bool isDeviceSupported = await auth.isDeviceSupported();
       final bool canAuthenticateWithBiometrics = await auth.canCheckBiometrics;
-      final bool canAuthenticate = isDeviceSupported && canAuthenticateWithBiometrics;
-      
       setState(() {
-        _canCheckBiometrics = canAuthenticate;
+        _canCheckBiometrics = canAuthenticateWithBiometrics;
       });
-      
-      if (widget.isChecking && canAuthenticate) {
-         // Auto trigger biometric authentication when checking
-         await Future.delayed(const Duration(milliseconds: 300)); // Small delay for UI
+      if (widget.isChecking && canAuthenticateWithBiometrics) {
+         // Auto trigger for checking
          _authenticate(); 
       }
     } catch (e) {
-      print('Biometrics check error: $e');
-      setState(() {
-        _canCheckBiometrics = false;
-      });
+      print(e);
     }
   }
 
   Future<void> _authenticate() async {
     try {
-      // Get available biometric types
-      final List<BiometricType> availableBiometrics = await auth.getAvailableBiometrics();
-      print('Available biometrics: $availableBiometrics');
-      
       final bool didAuthenticate = await auth.authenticate(
-        localizedReason: 'Authenticate to access Octra Wallet',
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: true,  // Use fingerprint/face only, not device PIN
-          useErrorDialogs: true,
-          sensitiveTransaction: true,
-        ),
+        localizedReason: 'Please authenticate to access Octra Wallet',
+        options: const AuthenticationOptions(stickyAuth: true),
       );
       if (didAuthenticate) {
          Navigator.pop(context, true);
       }
     } catch (e) {
-      print('Biometric auth error: $e');
-      // Show error to user
-      if (mounted) {
-        showCupertinoDialog(
-          context: context,
-          builder: (_) => CupertinoAlertDialog(
-            title: const Text('Biometric Error'),
-            content: Text('Could not authenticate: $e'),
-            actions: [CupertinoDialogAction(child: const Text('OK'), onPressed: () => Navigator.pop(context))],
-          ),
-        );
-      }
+      print(e);
     }
   }
 
@@ -125,17 +96,17 @@ class _PinScreenState extends State<PinScreen> {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      backgroundColor: const Color(0xFFF8F6F1), // Modern Light BG
+      backgroundColor: Colors.black,
       child: SafeArea(
         child: Column(
           children: [
             const SizedBox(height: 60),
-            const Icon(CupertinoIcons.lock_shield, size: 60, color: Color(0xFF111111)) // Modern Black
+            const Icon(CupertinoIcons.lock_shield, size: 60, color: CupertinoColors.systemBlue)
             .animate().scale(curve: Curves.elasticOut),
             const SizedBox(height: 24),
             Text(
               widget.isSettingPin ? "Set 4-Digit PIN" : "Enter PIN",
-              style: GoogleFonts.inter(color: const Color(0xFF111111), fontSize: 24, fontWeight: FontWeight.bold),
+              style: GoogleFonts.outfit(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 40),
             Row(
@@ -147,8 +118,8 @@ class _PinScreenState extends State<PinScreen> {
                   height: 16,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: index < _pin.length ? const Color(0xFF111111) : const Color(0xFFE0DFDB),
-                    boxShadow: index < _pin.length ? [BoxShadow(color: const Color(0xFF111111).withOpacity(0.2), blurRadius: 10)] : null,
+                    color: index < _pin.length ? CupertinoColors.systemBlue : CupertinoColors.systemGrey.withOpacity(0.3),
+                    boxShadow: index < _pin.length ? [BoxShadow(color: CupertinoColors.systemBlue.withOpacity(0.5), blurRadius: 10)] : null,
                   ),
                 );
               }),
@@ -229,7 +200,7 @@ class _PinScreenState extends State<PinScreen> {
           shape: BoxShape.circle,
         ),
         child: Center(
-           child: Text(val, style: GoogleFonts.inter(color: const Color(0xFF111111), fontSize: 28)),
+          child: Text(val, style: GoogleFonts.outfit(color: Colors.white, fontSize: 28)),
         ),
       ),
     );
@@ -246,7 +217,7 @@ class _PinScreenState extends State<PinScreen> {
         height: 70,
         color: Colors.transparent,
         child: const Center(
-          child: Icon(CupertinoIcons.delete_left, color: Color(0xFF111111)),
+          child: Icon(CupertinoIcons.delete_left, color: Colors.white),
         ),
       ),
     );
@@ -271,7 +242,7 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
         final isEnabled = snapshot.data ?? false;
         
         return CupertinoPageScaffold(
-          backgroundColor: const Color(0xFFF8F6F1),
+          backgroundColor: Colors.black,
           navigationBar: const CupertinoNavigationBar(
             middle: Text("Security", style: TextStyle(color: Colors.white)),
             backgroundColor: Color(0xCC1C1C1E),

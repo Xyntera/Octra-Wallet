@@ -47,3 +47,9 @@ app.*.map.json
 OctraWallet_Export/
 *.zip
 *.log
+
+# Native Rust build outputs
+native/rust/target/
+native/cpp/target/
+android/app/src/main/jniLibs/**/*.so
+ios/**/*.a

@@ -1,717 +1,894 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Colors, Icons, Scaffold, ListTile, Divider, SelectableText, SwitchListTile, SnackBar, ScaffoldMessenger, GridView, SliverGridDelegateWithFixedCrossAxisCount, Drawer, ListView, ScaffoldState, GlobalKey, VoidCallback;
+import 'package:flutter/material.dart'
+    show
+        Alignment,
+        Border,
+        BorderRadius,
+        BoxDecoration,
+        Colors,
+        Divider,
+        Gradient,
+        Icons,
+        LinearGradient;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../wallet.dart';
-import '../models.dart';
-import '../rpc.dart';
 import 'wallet_setup.dart';
-import 'scanner.dart';
-import 'success_animation.dart';
 import 'pin_screen.dart';
-import 'legal_pages.dart';
-import 'owl_logo.dart';
-import 'video_logo.dart';
 
-// ============================================================================
-// OCTRA WALLET - PREMIUM ANIMATED UI
-// Developer: @glaqzz on X
-// Package: com.octrawallet.app
-// ============================================================================
+const int _octMicro = 1000000;
 
-class HomeTabScaffold extends StatefulWidget {
-  const HomeTabScaffold({super.key});
-  @override
-  State<HomeTabScaffold> createState() => _HomeTabScaffoldState();
+Future<bool> _confirmWalletAction(BuildContext context) async {
+  final wallet = context.read<WalletController>();
+  final securityEnabled = await wallet.isSecurityEnabled;
+  final hasPin = await wallet.hasPin;
+  if (!securityEnabled || !hasPin) return true;
+  if (!context.mounted) return false;
+
+  final result = await Navigator.of(context, rootNavigator: true).push<bool>(
+    CupertinoPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => const PinScreen(isChecking: true),
+    ),
+  );
+  return result == true;
 }
 
-class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderStateMixin {
-  int _tab = 0;
-  bool _privateMode = false;
-  late AnimationController _rollController;
-  late PageController _pageController;
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  
-  // Theme colors
-  int _themeColorIndex = 0;
-  static const List<Color> _themeColors = [
-    Colors.black,           // 0: Classic Black
-    Color(0xFF1E3A5F),      // 1: Ocean Blue
-    Color(0xFF2D4739),      // 2: Forest Green
-    Color(0xFF4A1C40),      // 3: Royal Purple
-    Color(0xFF8B0000),      // 4: Deep Red
-    Color(0xFF1C1C1C),      // 5: Charcoal
-    Color(0xFF0D4F4F),      // 6: Teal
-    Color(0xFF4A3728),      // 7: Coffee Brown
-  ];
-  
-  static const List<String> _themeNames = [
-    'CLASSIC BLACK', 'OCEAN BLUE', 'FOREST GREEN', 'ROYAL PURPLE',
-    'DEEP RED', 'CHARCOAL', 'TEAL', 'COFFEE BROWN',
-  ];
+Future<bool> _confirmFeeAndSecurity(
+  BuildContext context, {
+  required String title,
+  required String feeOperation,
+  String? amountLabel,
+  double? publicAmount,
+}) async {
+  final wallet = context.read<WalletController>();
+  final feeRaw = await wallet.recommendedFeeRaw(feeOperation);
+  final feeOct = (int.tryParse(feeRaw) ?? 0) / _octMicro;
+  final totalLabel = publicAmount == null
+      ? null
+      : '${(publicAmount + feeOct).toStringAsFixed(6).replaceFirst(RegExp(r'\.?0+$'), '')} OCT';
+  if (!context.mounted) return false;
 
-  Color get _bg => _privateMode ? const Color(0xFF0A1F12) : Colors.white;
-  Color get _fg => _privateMode ? const Color(0xFFE0E0E0) : _themeColors[_themeColorIndex];
-  Color get _accent => _privateMode ? const Color(0xFF4ADE80) : _themeColors[_themeColorIndex];
+  final confirmed = await showCupertinoDialog<bool>(
+    context: context,
+    builder: (ctx) => CupertinoAlertDialog(
+      title: Text(title),
+      content: Column(
+        children: [
+          if (amountLabel != null) Text('Amount: $amountLabel'),
+          Text('Network fee: ${wallet.formatFeeRaw(feeRaw)}'),
+          Text('Fee raw: $feeRaw ou'),
+          if (totalLabel != null) Text('Total public cost: $totalLabel'),
+        ],
+      ),
+      actions: [
+        CupertinoDialogAction(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
+        ),
+        CupertinoDialogAction(
+          isDefaultAction: true,
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Continue'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return false;
+  if (!context.mounted) return false;
+  return _confirmWalletAction(context);
+}
 
+Future<void> _openExternalUrl(String url) async {
+  final uri = Uri.parse(url);
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
+}
+
+Widget _keyboardAwareSheet(
+  BuildContext context, {
+  required Widget child,
+  double maxHeightFactor = 0.9,
+}) {
+  final media = MediaQuery.of(context);
+  return AnimatedPadding(
+    duration: const Duration(milliseconds: 220),
+    curve: Curves.easeOutCubic,
+    padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+    child: Align(
+      alignment: Alignment.bottomCenter,
+      child: ConstrainedBox(
+        constraints:
+            BoxConstraints(maxHeight: media.size.height * maxHeightFactor),
+        child: child,
+      ),
+    ),
+  );
+}
+
+class HomeTabScaffold extends StatelessWidget {
+  const HomeTabScaffold({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        CupertinoTabScaffold(
+          tabBar: CupertinoTabBar(
+            backgroundColor: const Color(0xCC1C1C1E),
+            activeColor: CupertinoColors.systemBlue,
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(CupertinoIcons.home),
+                label: 'Home',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(CupertinoIcons.time),
+                label: 'History',
+              ),
+            ],
+          ),
+          tabBuilder: (context, index) {
+            switch (index) {
+              case 0:
+                return const DashboardTab();
+              case 1:
+                return const HistoryTab();
+              default:
+                return const DashboardTab();
+            }
+          },
+        ),
+        const _PvacBusyOverlay(),
+      ],
+    );
+  }
+}
+
+class _PvacBusyOverlay extends StatelessWidget {
+  const _PvacBusyOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    final wallet = context.watch<WalletController>();
+    if (!wallet.isPvacBusy) return const SizedBox.shrink();
+
+    return Positioned.fill(
+      child: ColoredBox(
+        color: const Color(0xB3000000),
+        child: SafeArea(
+          child: Center(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1C1C1E),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CupertinoActivityIndicator(radius: 16),
+                  const SizedBox(height: 16),
+                  Text(
+                    wallet.pvacStatus ?? 'Running PVAC operation',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Keep the app open. Crypto proofs are running in a background worker.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class DashboardTab extends StatefulWidget {
+  const DashboardTab({super.key});
+
+  @override
+  State<DashboardTab> createState() => _DashboardTabState();
+}
+
+class _DashboardTabState extends State<DashboardTab> {
   @override
   void initState() {
     super.initState();
-    _rollController = AnimationController(vsync: this, duration: const Duration(seconds: 20))..repeat();
-    _pageController = PageController(initialPage: 0);
-    WidgetsBinding.instance.addPostFrameCallback((_) => context.read<WalletController>().refresh());
-  }
-
-  @override
-  void dispose() {
-    _rollController.dispose();
-    _pageController.dispose();
-    super.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<WalletController>().refresh();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: _bg,
-      endDrawer: _buildDrawer(),
-      body: AnimatedContainer(
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOut,
-        color: _bg,
-        child: Column(
-          children: [
-            _buildHeader(),
-            Expanded(
-              child: PageView(
-                controller: _pageController,
-                onPageChanged: (index) => setState(() => _tab = index),
-                physics: const BouncingScrollPhysics(),
-                children: [
-                  _buildWalletTab(),
-                  _buildCryptTab(),
-                  _buildHistoryTab(),
-                ],
-              ),
-            ),
-            _buildBottomTabs(),
-            // Developer Credit
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: GestureDetector(
-                onTap: () => launchUrl(Uri.parse('https://x.com/glaqzz')),
-                child: Text('BUILT BY @GLAQZZ', style: TextStyle(fontFamily: 'Courier', fontSize: 9, letterSpacing: 1, color: _fg.withOpacity(0.3))),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+    final walletCtrl = context.watch<WalletController>();
+    final wallet = walletCtrl.currentWallet;
 
-  // ==================== ANIMATED HEADER ====================
-  Widget _buildHeader() {
-    final ctrl = context.watch<WalletController>();
-    return Container(
-      height: 95,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: _fg.withOpacity(_privateMode ? 0.15 : 0.2)))),
-      child: SafeArea(
-        bottom: false,
-        child: Row(
-          children: [
-            // Animated Video Logo - Bigger
-            const VideoLogo(size: 44),
-            const SizedBox(width: 8),
-            Expanded(
-              child: GestureDetector(
-                onTap: () => _showWalletPicker(context, ctrl),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('OCTRA WALLET', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1, color: _fg)),
-                          if (ctrl.currentWallet != null)
-                            Text(ctrl.currentWallet!.name.toUpperCase(), style: TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: _fg.withOpacity(0.5))),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(CupertinoIcons.chevron_down, size: 12, color: _fg.withOpacity(0.5)),
-                  ],
-                ),
-              ),
-            ),
-            const Spacer(),
-            // Refresh with loading animation
-            GestureDetector(
-              onTap: () => ctrl.refresh(),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                child: ctrl.isLoading
-                  ? CupertinoActivityIndicator(color: _fg)
-                  : Icon(CupertinoIcons.refresh, size: 26, color: _fg),
-              ),
-            ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(width: 24, height: 3, color: _fg, margin: const EdgeInsets.only(bottom: 5)),
-                    Container(width: 24, height: 3, color: _fg),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ).animate().fadeIn(duration: 400.ms);
-  }
+    if (wallet == null) {
+      return const Center(child: CupertinoActivityIndicator());
+    }
 
-  // ==================== WALLET TAB - Premium Hero ====================
-  Widget _buildWalletTab() {
-    final ctrl = context.watch<WalletController>();
-    final balance = _privateMode ? ctrl.encryptedBalance : ctrl.publicBalance;
-    
-    // Split balance for styling
-    final parts = balance.toStringAsFixed(6).split('.');
-    final whole = parts[0];
-    final decimal = parts.length > 1 ? '.${parts[1]}' : '';
-
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      child: Column(
-        children: [
-          // Hero Balance Section
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Balance Label with endless scroll
-                SizedBox(
-                  height: 20,
-                  child: AnimatedBuilder(
-                    animation: _rollController,
-                    builder: (_, __) {
-                      final offset = (_rollController.value * 200) % 200;
-                      return Stack(
-                        children: [
-                          Transform.translate(
-                            offset: Offset(-offset, 0),
-                            child: Row(children: List.generate(10, (_) => Padding(
-                              padding: const EdgeInsets.only(right: 24),
-                              child: Text(_privateMode ? 'ENCRYPTED BALANCE' : 'TOTAL BALANCE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 2, color: _fg.withOpacity(0.4))),
-                            ))),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-                
-                const SizedBox(height: 16),
-                
-                // Big Balance Number
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(whole, style: TextStyle(fontSize: 72, fontWeight: FontWeight.w800, letterSpacing: -4, height: 0.85, color: _fg)).animate().fadeIn().slideX(begin: -0.1),
-                    Text(decimal, style: TextStyle(fontSize: 36, fontWeight: FontWeight.w400, letterSpacing: -1, height: 1.5, color: _fg.withOpacity(0.25))).animate().fadeIn(delay: 100.ms),
-                  ],
-                ),
-                
-                const SizedBox(height: 8),
-                
-                // Token Label
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(border: Border.all(color: _fg.withOpacity(0.2))),
-                  child: Text('OCT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 2, color: _fg)),
-                ).animate().fadeIn(delay: 200.ms),
-              ],
+    return CupertinoPageScaffold(
+      backgroundColor: Colors.black,
+      child: CustomScrollView(
+        slivers: [
+          CupertinoSliverNavigationBar(
+            largeTitle:
+                Text('Octra', style: GoogleFonts.outfit(color: Colors.white)),
+            backgroundColor: const Color(0xCC1C1C1E),
+            leading: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () => _showSideMenu(context),
+              child: const Icon(CupertinoIcons.bars,
+                  color: CupertinoColors.systemBlue),
+            ),
+            trailing: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () => _showWalletsSheet(context),
+              child: const Icon(CupertinoIcons.square_list,
+                  color: CupertinoColors.systemBlue),
             ),
           ),
-          
-          // Action Items
-          _buildActionItem('Send', CupertinoIcons.arrow_up_right, () => _showTxSheet(context, 'SEND', isPublic: true)),
-          _buildActionItem('Receive', CupertinoIcons.arrow_down_left, () => _showReceive(context)),
-          _buildActionItem('Scan QR', CupertinoIcons.qrcode_viewfinder, () => _openScanner(context)),
-          _buildActionItem('Private Mode', _privateMode ? CupertinoIcons.lock_fill : CupertinoIcons.lock_open, 
-            () => setState(() => _privateMode = !_privateMode), isToggle: true, toggleValue: _privateMode),
-        ],
-      ),
-    );
-  }
-
-  // ==================== CRYPT TAB ====================
-  Widget _buildCryptTab() {
-    final ctrl = context.watch<WalletController>();
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('CRYPTOGRAPHY', style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800, letterSpacing: -1, color: _fg)).animate().fadeIn().slideX(begin: -0.05),
-                const SizedBox(height: 8),
-                Text('PRIVATE OPERATIONS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 2, color: _fg.withOpacity(0.4))).animate().fadeIn(delay: 100.ms),
-                
-                const SizedBox(height: 24),
-                
-                // Encrypted Balance Card
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(color: _accent, borderRadius: BorderRadius.circular(2)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('ENCRYPTED BALANCE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 1, color: _bg.withOpacity(0.7))),
-                      const SizedBox(height: 8),
-                      Text('${ctrl.encryptedBalance.toStringAsFixed(6)} OCT', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: _bg)),
-                    ],
-                  ),
-                ).animate().fadeIn().scale(begin: const Offset(0.95, 0.95)),
-              ],
-            ),
-          ),
-          
-          _buildActionItem('Encrypt Balance', CupertinoIcons.lock, () => _showTxSheet(context, 'ENCRYPT', isEncrypt: true)),
-          _buildActionItem('Decrypt Balance', CupertinoIcons.lock_open, () => _showTxSheet(context, 'DECRYPT', isDecrypt: true)),
-          _buildActionItem('Private Transfer', CupertinoIcons.arrow_right_arrow_left, () => _showTxSheet(context, 'PRIVATE TRANSFER', isPrivate: true)),
-          _buildActionItem('Export Wallet', CupertinoIcons.square_arrow_up, () => _showExport(context)),
-          
-          // Pending Claims
-          if (ctrl.pendingPrivateTransfers.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text('PENDING CLAIMS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 2, color: _fg)),
-            ),
-            ...ctrl.pendingPrivateTransfers.map((tx) => _buildClaimTile(tx, ctrl)),
-          ],
-        ],
-      ),
-    );
-  }
-
-  // ==================== ACTION ITEM ====================
-  Widget _buildActionItem(String text, IconData icon, VoidCallback onTap, {bool isToggle = false, bool toggleValue = false}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
-        decoration: BoxDecoration(border: Border(top: BorderSide(color: _fg.withOpacity(_privateMode ? 0.1 : 0.15)))),
-        child: Row(
-          children: [
-            Icon(icon, size: 22, color: _fg.withOpacity(0.7)),
-            const SizedBox(width: 16),
-            Text(text, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, letterSpacing: -0.5, color: _fg)),
-            const Spacer(),
-            if (isToggle)
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: 22, height: 22,
-                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: _fg, width: 2), color: toggleValue ? _fg : Colors.transparent),
-                child: toggleValue ? Icon(Icons.check, size: 14, color: _bg) : null,
-              )
-            else
-              Icon(CupertinoIcons.chevron_right, size: 18, color: _fg.withOpacity(0.4)),
-          ],
-        ),
-      ),
-    ).animate().fadeIn().slideX(begin: 0.02);
-  }
-
-  Widget _buildClaimTile(dynamic tx, WalletController ctrl) {
-    final id = tx['id'];
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(border: Border.all(color: _fg.withOpacity(0.2))),
-      child: Row(
-        children: [
-          Icon(CupertinoIcons.gift, size: 20, color: _accent),
-          const SizedBox(width: 12),
-          Expanded(child: Text('TRANSFER #$id', style: TextStyle(fontWeight: FontWeight.w600, color: _fg))),
-          GestureDetector(
-            onTap: () async {
-              final ok = await ctrl.claimTransfer(id.toString(), tx['ephemeral_public_key'], tx['encrypted_amount']);
-              if (ok) ctrl.refresh();
+          CupertinoSliverRefreshControl(
+            onRefresh: () async {
+              await walletCtrl.refresh();
             },
-            child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), color: _accent, child: Text('CLAIM', style: TextStyle(color: _bg, fontWeight: FontWeight.w700, fontSize: 11))),
           ),
-        ],
-      ),
-    );
-  }
-
-  // ==================== HISTORY TAB ====================
-  Widget _buildHistoryTab() {
-    final ctrl = context.watch<WalletController>();
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('HISTORY', style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800, letterSpacing: -1, color: _fg)).animate().fadeIn().slideX(begin: -0.05),
-                const SizedBox(height: 8),
-                Text('TRANSACTION ACTIVITY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 2, color: _fg.withOpacity(0.4))).animate().fadeIn(delay: 100.ms),
-              ],
-            ),
-          ),
-          
-          if (ctrl.isLoading)
-            Center(child: Padding(
-              padding: const EdgeInsets.all(48),
-              child: CupertinoActivityIndicator(color: _fg),
-            ))
-          else if (ctrl.history.isEmpty)
-            Center(child: Padding(
-              padding: const EdgeInsets.all(48),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
               child: Column(
                 children: [
-                  Icon(CupertinoIcons.doc_text, size: 48, color: _fg.withOpacity(0.2)),
-                  const SizedBox(height: 16),
-                  Text('NO TRANSACTIONS', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1, color: _fg.withOpacity(0.4))),
+                  _buildBalanceCard(
+                    title: 'Public Balance',
+                    balance: walletCtrl.publicBalance,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF0A84FF), Color(0xFF5E5CE6)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    icon: CupertinoIcons.globe,
+                  ).animate().scale(delay: 100.ms),
+                  const SizedBox(height: 12),
+                  _buildBalanceCard(
+                    title: 'Private Balance',
+                    balance: walletCtrl.encryptedBalance,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF103B2F), Color(0xFF00A86B)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    icon: CupertinoIcons.lock_shield,
+                  ).animate().scale(delay: 140.ms),
+                  const SizedBox(height: 12),
+                  Text(
+                    walletCtrl.nativeCore.isAvailable
+                        ? 'Native PVAC core active'
+                        : 'Native PVAC core unavailable: '
+                            '${walletCtrl.nativeCore.unavailableReason ?? 'unknown loader error'}',
+                    style:
+                        GoogleFonts.outfit(color: Colors.white54, fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 32),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 22,
+                    runSpacing: 20,
+                    children: [
+                      _buildActionButton(
+                        context,
+                        icon: CupertinoIcons.arrow_up_right,
+                        label: 'Send',
+                        onTap: () => _showPublicSendSheet(context),
+                      ),
+                      _buildActionButton(
+                        context,
+                        icon: CupertinoIcons.arrow_down_doc,
+                        label: 'Receive',
+                        onTap: () => _showReceiveSheet(context, wallet.address),
+                      ),
+                      _buildActionButton(
+                        context,
+                        icon: CupertinoIcons.lock_rotation,
+                        label: 'Encrypt',
+                        onTap: () =>
+                            _showPrivacyAmountSheet(context, encrypt: true),
+                      ),
+                      _buildActionButton(
+                        context,
+                        icon: CupertinoIcons.lock_open,
+                        label: 'Decrypt',
+                        onTap: () =>
+                            _showPrivacyAmountSheet(context, encrypt: false),
+                      ),
+                      _buildActionButton(
+                        context,
+                        icon: CupertinoIcons.paperplane,
+                        label: 'Private Send',
+                        onTap: () => _showPrivateSendSheet(context),
+                      ),
+                      _buildActionButton(
+                        context,
+                        icon: CupertinoIcons.tray_arrow_down,
+                        label: 'Claims',
+                        onTap: () => _showStealthClaimsSheet(context),
+                      ),
+                      _buildActionButton(
+                        context,
+                        icon: CupertinoIcons.person_3,
+                        label: 'Bulk',
+                        onTap: () => _showBulkSendSheet(context),
+                      ),
+                      _buildActionButton(
+                        context,
+                        icon: CupertinoIcons.square_list,
+                        label: 'Wallets',
+                        onTap: () => _showWalletsSheet(context),
+                      ),
+                    ],
+                  ).animate().fadeIn(delay: 200.ms),
+                  const SizedBox(height: 40),
                 ],
               ),
-            ))
-          else
-            ...ctrl.history.map((tx) => _buildHistoryTile(tx)).toList(),
-          
-          const SizedBox(height: 32),
+            ),
+          ),
+          const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
         ],
       ),
     );
   }
 
-  Widget _buildHistoryTile(Map<String, dynamic> tx) {
-    final direction = tx['direction'] ?? 'OUT';
-    final isOut = direction == 'OUT';
-    // Use displayAmount which is already converted to double in _fetchHistory
-    final amount = (tx['displayAmount'] as double?) ?? double.tryParse(tx['amount']?.toString() ?? '0') ?? 0.0;
-    final hash = tx['hash'] ?? tx['tx_hash'] ?? '';
-    final from = tx['from'] ?? '';
-    final to = tx['to'] ?? '';
-    final status = tx['status'] ?? 'confirmed';
-    
-    // Status colors
-    Color statusColor = Colors.green;
-    String statusText = 'CONFIRMED';
-    IconData statusIcon = CupertinoIcons.checkmark_circle_fill;
-    
-    if (status == 'pending') {
-      statusColor = Colors.orange;
-      statusText = 'PENDING';
-      statusIcon = CupertinoIcons.clock_fill;
-    } else if (status == 'failed') {
-      statusColor = Colors.red;
-      statusText = 'FAILED';
-      statusIcon = CupertinoIcons.xmark_circle_fill;
-    }
-    
-    return GestureDetector(
-      onTap: () => _showTransactionDetails(tx),
-      child: Container(
-      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-      padding: const EdgeInsets.all(16),
+  Widget _buildBalanceCard({
+    required String title,
+    required double balance,
+    required Gradient gradient,
+    required IconData icon,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        border: Border.all(color: _fg.withOpacity(0.15)),
-        color: _bg,
+        gradient: gradient,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: gradient.colors.first.withOpacity(0.4),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              // Direction Icon
-              Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(
-                  color: (isOut ? Colors.red : Colors.green).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
+              Icon(icon, color: Colors.white70, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: GoogleFonts.outfit(
+                  color: Colors.white70,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
                 ),
-                child: Icon(
-                  isOut ? CupertinoIcons.arrow_up_right : CupertinoIcons.arrow_down_left,
-                  color: isOut ? Colors.red : Colors.green,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              
-              // Details
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isOut ? 'SENT' : 'RECEIVED',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 1, color: _fg),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      isOut ? 'To: ${_shortAddress(to)}' : 'From: ${_shortAddress(from)}',
-                      style: TextStyle(fontSize: 10, color: _fg.withOpacity(0.5), fontFamily: 'Courier'),
-                    ),
-                  ],
-                ),
-              ),
-              
-              // Amount
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${isOut ? "-" : "+"}${amount.toStringAsFixed(4)}',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: isOut ? Colors.red : Colors.green,
-                    ),
-                  ),
-                  Text('OCT', style: TextStyle(fontSize: 9, color: _fg.withOpacity(0.4))),
-                ],
               ),
             ],
           ),
-          
-          const SizedBox(height: 12),
-          
-          // Status Row
-          Row(
-            children: [
-              Icon(statusIcon, size: 12, color: statusColor),
-              const SizedBox(width: 4),
-              Text(statusText, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: statusColor)),
-              const Spacer(),
-              if (hash.isNotEmpty)
-                Text('${hash.substring(0, 8)}...', style: TextStyle(fontSize: 9, color: _fg.withOpacity(0.3), fontFamily: 'Courier')),
-            ],
+          const SizedBox(height: 16),
+          Text(
+            '${balance.toStringAsFixed(6)} OCT',
+            style: GoogleFonts.outfit(
+              color: Colors.white,
+              fontSize: 32,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),
-    )).animate().fadeIn().slideX(begin: 0.02);
+    );
   }
 
-  void _showTransactionDetails(Map<String, dynamic> tx) {
-    final direction = tx['direction'] ?? 'OUT';
-    final isOut = direction == 'OUT';
-    final amount = (tx['displayAmount'] as double?) ?? 0.0;
-    final hash = tx['hash'] ?? '';
-    final from = tx['from'] ?? '';
-    final to = tx['to'] ?? '';
-    final status = tx['status'] ?? 'confirmed';
-    final timestamp = tx['timestamp'] ?? '';
-    
+  Widget _buildActionButton(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Column(
+      children: [
+        CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: onTap,
+          child: Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C1C1E),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Icon(icon, color: Colors.white),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(label,
+            style: GoogleFonts.outfit(color: Colors.white, fontSize: 13)),
+      ],
+    );
+  }
+
+  void _showSideMenu(BuildContext context) {
+    final rootContext = context;
+    final walletCtrl = context.read<WalletController>();
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close menu',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 240),
+      pageBuilder: (dialogContext, _, __) {
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: SafeArea(
+            child: Container(
+              width: MediaQuery.of(dialogContext).size.width * 0.88,
+              constraints: const BoxConstraints(maxWidth: 360),
+              height: double.infinity,
+              decoration: const BoxDecoration(
+                color: Color(0xFF111114),
+                borderRadius:
+                    BorderRadius.horizontal(right: Radius.circular(28)),
+                boxShadow: [
+                  BoxShadow(
+                      color: Color(0x99000000),
+                      blurRadius: 28,
+                      offset: Offset(12, 0)),
+                ],
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Octra Wallet',
+                            style: GoogleFonts.outfit(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Icon(CupertinoIcons.xmark_circle_fill,
+                              color: Colors.white54),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (walletCtrl.hasWallet) ...[
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Color(walletCtrl.currentWallet!.color)
+                                  .withOpacity(0.26),
+                              Colors.white.withOpacity(0.06),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Color(walletCtrl.currentWallet!.color)
+                                .withOpacity(0.35),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 5,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: Color(walletCtrl.currentWallet!.color),
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    walletCtrl.currentWallet!.name,
+                                    style: GoogleFonts.outfit(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${walletCtrl.currentWallet!.address.substring(0, 10)}...'
+                                    '${walletCtrl.currentWallet!.address.substring(walletCtrl.currentWallet!.address.length - 6)}',
+                                    style: const TextStyle(
+                                        color: Colors.white54, fontSize: 13),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildMenuItem(dialogContext, 'Switch Wallet',
+                          CupertinoIcons.rectangle_stack_person_crop, () {
+                        Navigator.pop(dialogContext);
+                        _showWalletsSheet(rootContext);
+                      }),
+                      _buildMenuItem(dialogContext, 'Export Wallet',
+                          CupertinoIcons.doc_text, () {
+                        Navigator.pop(dialogContext);
+                        _showExportWalletSheet(rootContext);
+                      }),
+                      _buildMenuItem(dialogContext, 'Public Send',
+                          CupertinoIcons.arrow_up_right, () {
+                        Navigator.pop(dialogContext);
+                        _showPublicSendSheet(rootContext);
+                      }),
+                      _buildMenuItem(
+                          dialogContext, 'Bulk Send', CupertinoIcons.person_3,
+                          () {
+                        Navigator.pop(dialogContext);
+                        _showBulkSendSheet(rootContext);
+                      }),
+                      _buildMenuItem(
+                          dialogContext, 'Tokens', CupertinoIcons.cube_box, () {
+                        Navigator.pop(dialogContext);
+                        _showTokensSheet(rootContext);
+                      }),
+                      _buildMenuItem(dialogContext, 'Register PVAC Key',
+                          CupertinoIcons.lock_shield, () async {
+                        Navigator.pop(dialogContext);
+                        await _registerPvacKey(rootContext);
+                      }),
+                      _buildMenuItem(dialogContext, 'Private Send',
+                          CupertinoIcons.paperplane, () {
+                        Navigator.pop(dialogContext);
+                        _showPrivateSendSheet(rootContext);
+                      }),
+                      _buildMenuItem(dialogContext, 'Scan Claims',
+                          CupertinoIcons.tray_arrow_down, () {
+                        Navigator.pop(dialogContext);
+                        _showStealthClaimsSheet(rootContext);
+                      }),
+                      const SizedBox(
+                        height: 28,
+                        child: Center(
+                            child: Divider(color: Colors.white12, height: 1)),
+                      ),
+                    ],
+                    _buildMenuItem(
+                        dialogContext, 'Security', CupertinoIcons.shield_fill,
+                        () {
+                      Navigator.pop(dialogContext);
+                      Navigator.of(rootContext).push(
+                        CupertinoPageRoute(
+                            builder: (_) => const SecuritySettingsPage()),
+                      );
+                    }),
+                    _buildMenuItem(dialogContext, 'About', CupertinoIcons.info,
+                        () {
+                      Navigator.pop(dialogContext);
+                      _showAboutDialog(rootContext);
+                    }),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (_, animation, __, child) {
+        final curved =
+            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return SlideTransition(
+          position: Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero)
+              .animate(curved),
+          child: FadeTransition(opacity: curved, child: child),
+        );
+      },
+    );
+  }
+
+  void _showAboutDialog(BuildContext context) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('About Octra Wallet'),
+        content: const Text(
+          'Octra Wallet\n'
+          'octrawallet.app\n'
+          'By Glaqz\n\n'
+          'OCT metadata: CoinGecko octra\n'
+          'Contract: 0x4647e1fe715c9e23959022c2416c71867f5a6e80',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => _openExternalUrl('https://octrawallet.app'),
+            child: const Text('Website'),
+          ),
+          CupertinoDialogAction(
+            onPressed: () =>
+                _openExternalUrl('https://www.coingecko.com/en/coins/octra'),
+            child: const Text('Price'),
+          ),
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showExportWalletSheet(BuildContext context) async {
+    final walletCtrl = context.read<WalletController>();
+    final wallet = walletCtrl.currentWallet;
+    if (wallet == null) return;
+    final confirmed = await _confirmWalletAction(context);
+    if (!confirmed || !context.mounted) return;
+
     showCupertinoModalPopup(
       context: context,
-      builder: (_) => Container(
-        height: MediaQuery.of(context).size.height * 0.6,
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: _bg,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      builder: (context) => _keyboardAwareSheet(
+        context,
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF1C1C1E),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Export Wallet',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Keep this offline. Anyone with these secrets can spend the wallet.',
+                    style: TextStyle(color: CupertinoColors.systemRed),
+                  ),
+                  const SizedBox(height: 20),
+                  _secretBlock(
+                    title: 'Seed Phrase',
+                    value: (wallet.mnemonic ?? '').trim().isEmpty
+                        ? 'No seed phrase stored for this wallet.'
+                        : wallet.mnemonic!.trim(),
+                    copyable: (wallet.mnemonic ?? '').trim().isNotEmpty,
+                  ),
+                  const SizedBox(height: 16),
+                  _secretBlock(
+                    title: 'Private Key',
+                    value: wallet.privateKeyBase64,
+                    copyable: true,
+                  ),
+                  const SizedBox(height: 16),
+                  CupertinoButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      ),
+    );
+  }
+
+  Widget _secretBlock({
+    required String title,
+    required String value,
+    required bool copyable,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(color: Colors.white54)),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: GoogleFonts.sourceCodePro(
+                color: Colors.white, fontSize: 13, height: 1.35),
+          ),
+          if (copyable) ...[
+            const SizedBox(height: 10),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () => Clipboard.setData(ClipboardData(text: value)),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(CupertinoIcons.doc_on_doc, size: 18),
+                  SizedBox(width: 8),
+                  Text('Copy'),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuItem(
+    BuildContext context,
+    String title,
+    IconData icon,
+    VoidCallback onTap,
+  ) {
+    return CupertinoButton(
+      onPressed: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
           children: [
-            // Header
-            Row(
-              children: [
-                Container(
-                  width: 48, height: 48,
-                  decoration: BoxDecoration(
-                    color: (isOut ? Colors.red : Colors.green).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    isOut ? CupertinoIcons.arrow_up_right : CupertinoIcons.arrow_down_left,
-                    color: isOut ? Colors.red : Colors.green,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(isOut ? 'SENT' : 'RECEIVED', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _fg)),
-                      Text(status.toUpperCase(), style: TextStyle(fontSize: 11, color: status == 'confirmed' ? Colors.green : Colors.orange)),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Icon(CupertinoIcons.xmark_circle_fill, color: _fg.withOpacity(0.3)),
-                ),
-              ],
-            ),
-            
-            const SizedBox(height: 24),
-            
-            // Amount
-            Center(
-              child: Text(
-                '${isOut ? "-" : "+"}${amount.toStringAsFixed(6)} OCT',
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: isOut ? Colors.red : Colors.green),
-              ),
-            ),
-            
-            const SizedBox(height: 24),
-            Divider(color: _fg.withOpacity(0.1)),
-            const SizedBox(height: 16),
-            
-            // Details
-            _detailRow('FROM', from),
-            _detailRow('TO', to),
-            if (hash.isNotEmpty) _detailRow('TX HASH', hash),
-            if (timestamp.isNotEmpty) _detailRow('TIME', timestamp.toString()),
-            _detailRow('STATUS', status.toUpperCase()),
-            
+            Icon(icon, color: Colors.white),
+            const SizedBox(width: 16),
+            Text(title,
+                style: GoogleFonts.outfit(color: Colors.white, fontSize: 16)),
             const Spacer(),
-            
-            // View on Explorer
-            if (hash.isNotEmpty)
-              GestureDetector(
-                onTap: () => launchUrl(Uri.parse('https://octrascan.io/transactions/$hash')),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(border: Border.all(color: _fg)),
-                  child: Center(child: Text('VIEW ON EXPLORER', style: TextStyle(fontWeight: FontWeight.w700, color: _fg, letterSpacing: 1))),
-                ),
-              ),
+            const Icon(CupertinoIcons.chevron_right,
+                color: Colors.grey, size: 16),
           ],
         ),
       ),
     );
   }
-  
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: _fg.withOpacity(0.4), letterSpacing: 1)),
-          ),
-          Expanded(
-            child: Text(value, style: TextStyle(fontSize: 12, fontFamily: 'Courier', color: _fg), overflow: TextOverflow.ellipsis, maxLines: 2),
-          ),
-        ],
-      ),
-    );
-  }
 
-  String _shortAddress(String addr) {
-    if (addr.length < 12) return addr;
-    return '${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}';
-  }
-
-  // ==================== BOTTOM TABS ====================
-  Widget _buildBottomTabs() {
-    return Container(
-      height: 72,
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: _fg.withOpacity(_privateMode ? 0.1 : 1)))),
-      child: Row(children: [_buildTabBtn('WALLET', 0), _buildTabBtn('CRYPT', 1), _buildTabBtn('HISTORY', 2)]),
-    );
-  }
-
-  Widget _buildTabBtn(String label, int index) {
-    final isActive = _tab == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          _pageController.animateToPage(index, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          decoration: BoxDecoration(
-            color: isActive ? _fg : _bg,
-            border: index == 0 ? Border(right: BorderSide(color: _fg.withOpacity(_privateMode ? 0.1 : 1))) : null,
-          ),
-          child: Center(child: Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: isActive ? _bg : _fg))),
-        ),
-      ),
-    );
-  }
-
-  // ==================== DIALOGS & SHEETS ====================
-  void _showWalletPicker(BuildContext context, WalletController ctrl) {
+  void _showWalletsSheet(BuildContext context) {
+    final walletCtrl = context.read<WalletController>();
     showCupertinoModalPopup(
       context: context,
-      builder: (_) => Container(
-        height: 450, color: _bg,
+      builder: (context) => Container(
+        height: 500,
+        decoration: const BoxDecoration(
+          color: Color(0xFF1C1C1E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
         child: Column(
           children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: _fg.withOpacity(0.15)))),
-              child: Row(children: [
-                Text('SELECT WALLET', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 1, color: _fg)),
-                const Spacer(),
-                GestureDetector(onTap: () => Navigator.pop(context), child: Icon(Icons.close, color: _fg)),
-              ]),
+            const SizedBox(height: 16),
+            Text(
+              'Wallets',
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
             ),
+            const SizedBox(height: 16),
             Expanded(
               child: ListView.builder(
-                itemCount: ctrl.wallets.length + 1,
-                itemBuilder: (_, i) {
-                  if (i == ctrl.wallets.length) {
-                    return GestureDetector(
-                      onTap: () { Navigator.pop(context); Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(builder: (_) => const WalletSetupPage())); },
-                      child: Container(
-                        padding: const EdgeInsets.all(20),
-                        child: Row(children: [
-                          Container(width: 44, height: 44, decoration: BoxDecoration(border: Border.all(color: _fg)), child: Icon(Icons.add, color: _fg)),
-                          const SizedBox(width: 16),
-                          Text('ADD NEW WALLET', style: TextStyle(fontWeight: FontWeight.w600, color: _fg)),
-                        ]),
+                itemCount: walletCtrl.wallets.length + 1,
+                itemBuilder: (ctx, idx) {
+                  if (idx == walletCtrl.wallets.length) {
+                    return CupertinoButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.of(context, rootNavigator: true).push(
+                          CupertinoPageRoute(
+                              builder: (_) => const WalletSetupPage()),
+                        );
+                      },
+                      child: const Row(
+                        children: [
+                          Icon(CupertinoIcons.add),
+                          SizedBox(width: 8),
+                          Text('Add Wallet'),
+                        ],
                       ),
                     );
                   }
-                  final w = ctrl.wallets[i];
-                  return GestureDetector(
-                    onTap: () { ctrl.selectWallet(w); Navigator.pop(context); },
-                    onLongPress: () { Navigator.pop(context); _editWallet(context, w, ctrl); },
-                    child: Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: _fg.withOpacity(0.08)))),
-                      child: Row(children: [
-                        Container(width: 44, height: 44, decoration: BoxDecoration(color: Color(w.color), borderRadius: BorderRadius.circular(22))),
+
+                  final w = walletCtrl.wallets[idx];
+                  final isSelected = w == walletCtrl.currentWallet;
+                  return CupertinoButton(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    onPressed: () {
+                      walletCtrl.selectWallet(w);
+                      Navigator.pop(context);
+                    },
+                    child: Row(
+                      children: [
+                        Icon(
+                          isSelected
+                              ? CupertinoIcons.check_mark_circled_solid
+                              : CupertinoIcons.circle,
+                          color: isSelected ? Colors.green : Colors.grey,
+                          size: 24,
+                        ),
                         const SizedBox(width: 16),
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(w.name.toUpperCase(), style: TextStyle(fontWeight: FontWeight.w600, color: _fg)),
-                          Text('${w.address.substring(0, 18)}...', style: TextStyle(fontSize: 10, fontFamily: 'Courier', color: _fg.withOpacity(0.4))),
-                        ])),
-                        if (w == ctrl.currentWallet) Icon(Icons.check_circle, color: _accent),
-                      ]),
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: Color(w.color),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                w.name,
+                                style: GoogleFonts.outfit(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Text(
+                                '${w.address.substring(0, 10)}...',
+                                style: const TextStyle(
+                                    color: Colors.grey, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   );
                 },
@@ -723,439 +900,1595 @@ class _HomeTabScaffoldState extends State<HomeTabScaffold> with TickerProviderSt
     );
   }
 
-  void _editWallet(BuildContext ctx, Wallet w, WalletController ctrl) {
-    final nameCtrl = TextEditingController(text: w.name);
-    int color = w.color;
-    final colors = [0xFF000000, 0xFF357AF6, 0xFF32D74B, 0xFFFF9F0A, 0xFFFF375F, 0xFFBF5AF2, 0xFF5856D6, 0xFF64D2FF];
-    showCupertinoDialog(
-      context: ctx,
-      builder: (_) => StatefulBuilder(builder: (_, set) => CupertinoAlertDialog(
-        title: const Text('EDIT WALLET'),
-        content: Column(children: [
-          const SizedBox(height: 16),
-          CupertinoTextField(controller: nameCtrl, placeholder: 'Wallet Name'),
-          const SizedBox(height: 16),
-          Wrap(spacing: 8, runSpacing: 8, children: colors.map((c) => GestureDetector(
-            onTap: () => set(() => color = c),
-            child: Container(width: 36, height: 36, decoration: BoxDecoration(color: Color(c), shape: BoxShape.circle, border: color == c ? Border.all(color: Colors.white, width: 3) : null)),
-          )).toList()),
-        ]),
-        actions: [
-          CupertinoDialogAction(isDestructiveAction: true, child: const Text('DELETE'), onPressed: () { ctrl.deleteWallet(w.address); Navigator.pop(ctx); }),
-          CupertinoDialogAction(child: const Text('CANCEL'), onPressed: () => Navigator.pop(ctx)),
-          CupertinoDialogAction(isDefaultAction: true, child: const Text('SAVE'), onPressed: () { ctrl.updateWallet(w.address, name: nameCtrl.text, color: color); Navigator.pop(ctx); }),
-        ],
-      )),
-    );
-  }
-
-  // ==================== SLIDE DRAWER ====================
-  Widget _buildDrawer() {
-    return Drawer(
-      backgroundColor: _bg,
-      child: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: _fg.withOpacity(0.1)))),
-              child: Row(
-                children: [
-                  Image.asset('assets/icon.png', width: 48, height: 48),
-                  const SizedBox(width: 16),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('OCTRA WALLET', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _fg, letterSpacing: 1)),
-                      Text('Settings & Options', style: TextStyle(fontSize: 12, color: _fg.withOpacity(0.6))),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                children: [
-                  _drawerItem(Icons.palette_outlined, 'Theme Colors', () {
-                    Navigator.pop(context);
-                    _showThemeColorPicker(context);
-                  }),
-                  _drawerItem(Icons.security_outlined, 'Security Settings', () {
-                    Navigator.pop(context);
-                    Navigator.push(context, CupertinoPageRoute(builder: (_) => const SecuritySettingsPage()));
-                  }),
-                  _drawerItem(Icons.file_download_outlined, 'Export Wallet', () async {
-                    Navigator.pop(context);
-                    await _secureExportWallet(context);
-                  }),
-                  Divider(color: _fg.withOpacity(0.1), height: 24),
-                  _drawerItem(Icons.privacy_tip_outlined, 'Privacy Policy', () {
-                    Navigator.pop(context);
-                    Navigator.push(context, CupertinoPageRoute(builder: (_) => const PrivacyPolicyPage()));
-                  }),
-                  _drawerItem(Icons.description_outlined, 'Terms & Conditions', () {
-                    Navigator.pop(context);
-                    Navigator.push(context, CupertinoPageRoute(builder: (_) => const TermsPage()));
-                  }),
-                  Divider(color: _fg.withOpacity(0.1), height: 24),
-                  _drawerItem(Icons.explore_outlined, 'View on Explorer', () {
-                    Navigator.pop(context);
-                    final addr = context.read<WalletController>().currentWallet?.address ?? '';
-                    launchUrl(Uri.parse('https://octrascan.io/addresses/$addr'), mode: LaunchMode.externalApplication);
-                  }),
-                  _drawerItem(Icons.refresh, 'Refresh Data', () {
-                    Navigator.pop(context);
-                    context.read<WalletController>().refresh();
-                  }),
-                ],
-              ),
-            ),
-            
-            // Footer
-            Container(
-              padding: const EdgeInsets.all(16),
-              child: GestureDetector(
-                onTap: () => launchUrl(Uri.parse('https://x.com/glaqzz')),
-                child: Text('Developer @glaqzz', style: TextStyle(fontSize: 11, color: _fg.withOpacity(0.4))),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-  
-  Widget _drawerItem(IconData icon, String label, VoidCallback onTap) {
-    return ListTile(
-      leading: Icon(icon, color: _fg, size: 22),
-      title: Text(label, style: TextStyle(color: _fg, fontSize: 15, fontWeight: FontWeight.w500)),
-      onTap: onTap,
-      dense: true,
-    );
-  }
-
-  void _showMenu(BuildContext ctx) {
+  void _showReceiveSheet(BuildContext context, String address) {
     showCupertinoModalPopup(
-      context: ctx,
-      builder: (_) => CupertinoActionSheet(
-        actions: [
-          // Theme Colors
-          CupertinoActionSheetAction(
-            child: const Text('Theme Colors', style: TextStyle(color: Colors.black)),
-            onPressed: () {
-              Navigator.pop(ctx);
-              _showThemeColorPicker(ctx);
-            },
-          ),
-          // Security with PIN
-          CupertinoActionSheetAction(
-            child: const Text('Security Settings', style: TextStyle(color: Colors.black)),
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.push(ctx, CupertinoPageRoute(builder: (_) => const SecuritySettingsPage()));
-            },
-          ),
-          // Export Wallet (Requires PIN)
-          CupertinoActionSheetAction(
-            child: const Text('Export Wallet', style: TextStyle(color: Colors.black)),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await _secureExportWallet(ctx);
-            },
-          ),
-          CupertinoActionSheetAction(
-            child: const Text('Privacy Policy', style: TextStyle(color: Colors.black)),
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.push(ctx, CupertinoPageRoute(builder: (_) => const PrivacyPolicyPage()));
-            },
-          ),
-          CupertinoActionSheetAction(
-            child: const Text('Terms & Conditions', style: TextStyle(color: Colors.black)),
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.push(ctx, CupertinoPageRoute(builder: (_) => const TermsPage()));
-            },
-          ),
-          CupertinoActionSheetAction(
-            child: const Text('View on Explorer', style: TextStyle(color: Colors.black)),
-            onPressed: () {
-              Navigator.pop(ctx);
-              final addr = context.read<WalletController>().currentWallet?.address ?? '';
-              launchUrl(Uri.parse('https://octrascan.io/addresses/$addr'), mode: LaunchMode.externalApplication);
-            },
-          ),
-          CupertinoActionSheetAction(
-            child: const Text('Refresh Data', style: TextStyle(color: Colors.black)),
-            onPressed: () {
-              Navigator.pop(ctx);
-              context.read<WalletController>().refresh();
-            },
-          ),
-          CupertinoActionSheetAction(
-            child: const Text('Developer @glaqzz', style: TextStyle(color: Colors.grey, fontSize: 12)),
-            onPressed: () {
-              Navigator.pop(ctx);
-              launchUrl(Uri.parse('https://x.com/glaqzz'));
-            },
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          child: const Text('Cancel', style: TextStyle(color: Colors.red)),
-          onPressed: () => Navigator.pop(ctx),
+      context: context,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.85,
+        decoration: const BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
         ),
-      ),
-    );
-  }
-  
-  // Theme Color Picker
-  void _showThemeColorPicker(BuildContext ctx) {
-    showCupertinoModalPopup(
-      context: ctx,
-      builder: (_) => Container(
-        height: 380,
-        color: _bg,
-        padding: const EdgeInsets.all(24),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('THEME COLORS', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 1, color: _fg)),
-            const SizedBox(height: 8),
-            Text('Select your preferred accent color', style: TextStyle(fontSize: 12, color: _fg.withOpacity(0.5))),
-            const SizedBox(height: 24),
-            Expanded(
-              child: GridView.builder(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, crossAxisSpacing: 16, mainAxisSpacing: 16),
-                itemCount: _themeColors.length,
-                itemBuilder: (_, i) => GestureDetector(
-                  onTap: () {
-                    setState(() => _themeColorIndex = i);
-                    Navigator.pop(ctx);
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: _themeColors[i],
-                      borderRadius: BorderRadius.circular(12),
-                      border: _themeColorIndex == i ? Border.all(color: Colors.white, width: 3) : null,
-                      boxShadow: [BoxShadow(color: _themeColors[i].withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 4))],
-                    ),
-                    child: _themeColorIndex == i ? const Icon(CupertinoIcons.checkmark, color: Colors.white) : null,
-                  ),
-                ),
-              ),
+            const SizedBox(height: 32),
+            QrImageView(
+              data: address,
+              size: 250,
+              backgroundColor: Colors.white,
+            ),
+            const SizedBox(height: 32),
+            Text(
+              address,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white54),
             ),
             const SizedBox(height: 16),
-            Text('Current: ${_themeNames[_themeColorIndex]}', style: TextStyle(fontSize: 11, color: _fg.withOpacity(0.6))),
+            CupertinoButton.filled(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: address));
+                Navigator.pop(context);
+              },
+              child: const Text('Copy'),
+            ),
           ],
         ),
       ),
     );
   }
-  
-  // Secure Export Wallet (Requires PIN)
-  Future<void> _secureExportWallet(BuildContext ctx) async {
-    final wallet = ctx.read<WalletController>();
-    
-    // Check if security is enabled and require PIN
-    if (await wallet.hasPin) {
-      final success = await Navigator.push<bool>(
-        ctx,
-        CupertinoPageRoute(fullscreenDialog: true, builder: (_) => const PinScreen(isChecking: true)),
-      );
-      if (success != true) {
-        // PIN check failed, show error
-        showCupertinoDialog(
-          context: ctx,
-          builder: (_) => CupertinoAlertDialog(
-            title: const Text('Access Denied'),
-            content: const Text('PIN verification required to export wallet.'),
-            actions: [CupertinoDialogAction(child: const Text('OK'), onPressed: () => Navigator.pop(ctx))],
-          ),
-        );
-        return;
-      }
-    }
-    
-    // Show export dialog after PIN verification
-    _showSecureExportDialog(ctx);
-  }
-  
-  void _showSecureExportDialog(BuildContext ctx) {
-    final w = context.read<WalletController>().currentWallet;
-    if (w == null) return;
-    
+
+  void _showPublicSendSheet(BuildContext context) {
+    final parentContext = context;
+    final addressController = TextEditingController();
+    final amountController = TextEditingController();
+    final messageController = TextEditingController();
+    var isSubmitting = false;
+
     showCupertinoModalPopup(
-      context: ctx,
-      builder: (_) => Container(
-        height: MediaQuery.of(ctx).size.height * 0.7,
-        color: _bg,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(CupertinoIcons.lock_shield_fill, color: Colors.green, size: 28),
-                const SizedBox(width: 12),
-                Text('EXPORT WALLET', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _fg)),
-                const Spacer(),
-                GestureDetector(onTap: () => Navigator.pop(ctx), child: Icon(CupertinoIcons.xmark_circle_fill, color: _fg.withOpacity(0.3))),
-              ],
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => _keyboardAwareSheet(
+          context,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+              color: Color(0xFF1C1C1E),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
-            const SizedBox(height: 8),
-            Text('Keep this information secure!', style: TextStyle(fontSize: 11, color: Colors.orange)),
-            const SizedBox(height: 24),
-            
-            // Seed Phrase
-            if (w.mnemonic != null && w.mnemonic!.isNotEmpty) ...[
-              Text('SEED PHRASE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1, color: _fg.withOpacity(0.5))),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(border: Border.all(color: _fg.withOpacity(0.2)), borderRadius: BorderRadius.circular(8)),
-                child: SelectableText(w.mnemonic!, style: TextStyle(fontSize: 12, height: 1.6, color: _fg)),
-              ),
-              const SizedBox(height: 12),
-              GestureDetector(
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: w.mnemonic!));
-                  HapticFeedback.mediumImpact();
-                  ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Seed phrase copied!'), duration: Duration(seconds: 2)));
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(8)),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: const [
-                    Icon(CupertinoIcons.doc_on_clipboard, color: Colors.white, size: 16),
-                    SizedBox(width: 8),
-                    Text('COPY SEED PHRASE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 11)),
-                  ]),
+            child: SafeArea(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Public Send',
+                      style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    _walletTextField(
+                        addressController, 'Recipient Octra address'),
+                    const SizedBox(height: 12),
+                    _walletTextField(
+                      amountController,
+                      'Amount in OCT',
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                    const SizedBox(height: 12),
+                    _walletTextField(messageController, 'Message optional'),
+                    const SizedBox(height: 20),
+                    CupertinoButton.filled(
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              final to = addressController.text.trim();
+                              final amount =
+                                  double.tryParse(amountController.text.trim());
+                              if (to.isEmpty || amount == null || amount <= 0) {
+                                _showResultDialog(context,
+                                    'Enter a recipient address and valid amount');
+                                return;
+                              }
+                              setState(() {
+                                isSubmitting = true;
+                              });
+                              try {
+                                final confirmed = await _confirmFeeAndSecurity(
+                                  parentContext,
+                                  title: 'Confirm Public Send',
+                                  feeOperation: 'standard',
+                                  amountLabel: '$amount OCT',
+                                  publicAmount: amount,
+                                );
+                                if (!confirmed) {
+                                  setState(() {
+                                    isSubmitting = false;
+                                  });
+                                  return;
+                                }
+                                final wallet = context.read<WalletController>();
+                                final res = await wallet.sendTransaction(
+                                  to,
+                                  amount,
+                                  messageController.text.trim(),
+                                );
+                                if (context.mounted) Navigator.pop(context);
+                                _showRpcResult(parentContext, wallet, res);
+                              } catch (e) {
+                                if (context.mounted) Navigator.pop(context);
+                                if (parentContext.mounted)
+                                  _showResultDialog(
+                                      parentContext, e.toString());
+                              }
+                            },
+                      child: isSubmitting
+                          ? const CupertinoActivityIndicator()
+                          : const Text('Send'),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 24),
-            ],
-            
-            // Private Key
-            Text('PRIVATE KEY', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1, color: _fg.withOpacity(0.5))),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(border: Border.all(color: _fg.withOpacity(0.2)), borderRadius: BorderRadius.circular(8)),
-              child: SelectableText(w.privateKeyBase64, style: TextStyle(fontSize: 10, fontFamily: 'Courier', color: _fg)),
             ),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: w.privateKeyBase64));
-                HapticFeedback.mediumImpact();
-                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Private key copied!'), duration: Duration(seconds: 2)));
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(8)),
-                child: Row(mainAxisSize: MainAxisSize.min, children: const [
-                  Icon(CupertinoIcons.doc_on_clipboard, color: Colors.white, size: 16),
-                  SizedBox(width: 8),
-                  Text('COPY PRIVATE KEY', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 11)),
-                ]),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  void _showReceive(BuildContext ctx) {
-    final addr = context.read<WalletController>().currentWallet?.address ?? '';
-    showCupertinoModalPopup(context: ctx, builder: (_) => Container(
-      height: 520, color: _bg,
-      child: Column(children: [
-        Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(border: Border(bottom: BorderSide(color: _fg.withOpacity(0.15)))),
-          child: Row(children: [Text('RECEIVE', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1, color: _fg)), const Spacer(), GestureDetector(onTap: () => Navigator.pop(ctx), child: Icon(Icons.close, color: _fg))])),
-        const Spacer(),
-        Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(border: Border.all(color: _fg)), child: QrImageView(data: addr, size: 200, backgroundColor: Colors.white)),
-        const SizedBox(height: 20),
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 32), child: Text(addr, textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Courier', fontSize: 10, color: _fg))),
-        const Spacer(),
-        GestureDetector(onTap: () { Clipboard.setData(ClipboardData(text: addr)); Navigator.pop(ctx); },
-          child: Container(margin: const EdgeInsets.all(20), padding: const EdgeInsets.all(18), color: _fg, child: Center(child: Text('COPY ADDRESS', style: TextStyle(color: _bg, fontWeight: FontWeight.w700, letterSpacing: 1))))),
-      ]),
-    ));
-  }
+  void _showPrivacyAmountSheet(BuildContext context, {required bool encrypt}) {
+    final parentContext = context;
+    final controller = TextEditingController();
+    var isSubmitting = false;
 
-  void _showExport(BuildContext ctx) {
-    final w = context.read<WalletController>().currentWallet;
-    if (w == null) return;
-    showCupertinoDialog(context: ctx, builder: (_) => CupertinoAlertDialog(
-      title: const Text('EXPORT WALLET'),
-      content: Column(children: [
-        const SizedBox(height: 16),
-        if (w.mnemonic != null && w.mnemonic!.isNotEmpty) ...[const Text('SEED PHRASE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)), const SizedBox(height: 8), SelectableText(w.mnemonic!, style: const TextStyle(fontSize: 11)), const SizedBox(height: 16)],
-        const Text('PRIVATE KEY', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)), const SizedBox(height: 8),
-        SelectableText(w.privateKeyBase64, style: const TextStyle(fontSize: 9, fontFamily: 'Courier')),
-      ]),
-      actions: [
-        CupertinoDialogAction(child: const Text('COPY SEED'), onPressed: () { if (w.mnemonic != null) Clipboard.setData(ClipboardData(text: w.mnemonic!)); Navigator.pop(ctx); }),
-        CupertinoDialogAction(child: const Text('CLOSE'), onPressed: () => Navigator.pop(ctx)),
-      ],
-    ));
-  }
-
-  void _openScanner(BuildContext ctx) async {
-    final result = await Navigator.of(ctx).push<String>(CupertinoPageRoute(builder: (_) => const ScannerPage()));
-    if (result != null) _showTxSheet(ctx, 'SEND', isPublic: true, prefill: result);
-  }
-
-  void _showTxSheet(BuildContext ctx, String title, {bool isPublic = false, bool isEncrypt = false, bool isDecrypt = false, bool isPrivate = false, String? prefill}) {
-    final addrCtrl = TextEditingController(text: prefill);
-    final amtCtrl = TextEditingController();
-    bool loading = false;
-    showCupertinoModalPopup(context: ctx, builder: (_) => StatefulBuilder(builder: (ctx2, set) => Container(
-      height: 420, color: _bg,
-      child: Column(children: [
-        Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(border: Border(bottom: BorderSide(color: _fg.withOpacity(0.15)))),
-          child: Row(children: [Text(title, style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1, color: _fg)), const Spacer(), GestureDetector(onTap: () => Navigator.pop(ctx2), child: Icon(Icons.close, color: _fg))])),
-        Expanded(child: Padding(padding: const EdgeInsets.all(24), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (isPublic || isPrivate) ...[Text('ADDRESS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _fg)), const SizedBox(height: 8),
-            Container(decoration: BoxDecoration(border: Border.all(color: _fg)), child: CupertinoTextField(controller: addrCtrl, placeholder: 'Recipient address', padding: const EdgeInsets.all(14), decoration: null, style: TextStyle(color: _fg))), const SizedBox(height: 20)],
-          Text('AMOUNT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _fg)), const SizedBox(height: 8),
-          Container(decoration: BoxDecoration(border: Border.all(color: _fg)), child: CupertinoTextField(controller: amtCtrl, placeholder: '0.00', keyboardType: const TextInputType.numberWithOptions(decimal: true), padding: const EdgeInsets.all(14), decoration: null, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600, color: _fg))),
-          const Spacer(),
-          GestureDetector(
-            onTap: loading ? null : () async {
-              final amt = double.tryParse(amtCtrl.text) ?? 0;
-              if (amt <= 0) return;
-              set(() => loading = true);
-              final ctrl = context.read<WalletController>();
-              RpcResponse res;
-              if (isPublic) res = await ctrl.sendTransaction(addrCtrl.text.trim(), amt, null);
-              else if (isEncrypt) res = await ctrl.encryptMoney(amt);
-              else if (isDecrypt) res = await ctrl.decryptMoney(amt);
-              else res = await ctrl.makePrivateTransfer(addrCtrl.text.trim(), amt);
-              Navigator.pop(ctx2);
-              if (res.statusCode == 200) { 
-                Navigator.of(context).push(CupertinoPageRoute(builder: (_) => SuccessAnimation(
-                  request: ctrl.refresh(),
-                  onComplete: () => Navigator.pop(context),
-                ))); 
-              }
-            },
-            child: Container(width: double.infinity, padding: const EdgeInsets.all(18), color: _fg, child: Center(child: loading ? CupertinoActivityIndicator(color: _bg) : Text('CONFIRM', style: TextStyle(color: _bg, fontWeight: FontWeight.w700, letterSpacing: 1)))),
+    showCupertinoModalPopup(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => _keyboardAwareSheet(
+          context,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+              color: Color(0xFF1C1C1E),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SafeArea(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      encrypt ? 'Encrypt Public OCT' : 'Decrypt Private OCT',
+                      style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      encrypt
+                          ? 'Move public balance into encrypted private balance.'
+                          : 'Move encrypted private balance back to public balance.',
+                      style: const TextStyle(color: Colors.white54),
+                    ),
+                    const SizedBox(height: 20),
+                    CupertinoTextField(
+                      controller: controller,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      placeholder: 'Amount in OCT',
+                      style: const TextStyle(color: Colors.white),
+                      placeholderStyle: const TextStyle(color: Colors.white38),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white10),
+                      ),
+                      padding: const EdgeInsets.all(16),
+                    ),
+                    const SizedBox(height: 20),
+                    CupertinoButton.filled(
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              final amount =
+                                  double.tryParse(controller.text.trim());
+                              if (amount == null || amount <= 0) {
+                                _showResultDialog(context, 'Invalid amount');
+                                return;
+                              }
+                              setState(() {
+                                isSubmitting = true;
+                              });
+                              try {
+                                final confirmed = await _confirmFeeAndSecurity(
+                                  parentContext,
+                                  title: encrypt
+                                      ? 'Confirm Encrypt'
+                                      : 'Confirm Decrypt',
+                                  feeOperation: encrypt ? 'encrypt' : 'decrypt',
+                                  amountLabel: '$amount OCT',
+                                  publicAmount: encrypt ? amount : null,
+                                );
+                                if (!confirmed) {
+                                  setState(() {
+                                    isSubmitting = false;
+                                  });
+                                  return;
+                                }
+                                final wallet = context.read<WalletController>();
+                                final res = encrypt
+                                    ? await wallet.encryptMoney(amount)
+                                    : await wallet.decryptMoney(amount);
+                                if (context.mounted) Navigator.pop(context);
+                                final err = wallet.rpc.rpcError(res);
+                                final result = wallet.rpc.rpcResult(res);
+                                final msg = err ??
+                                    (result is Map && result['tx_hash'] != null
+                                        ? 'Submitted: ${result['tx_hash']}'
+                                        : res.text);
+                                if (parentContext.mounted)
+                                  _showResultDialog(parentContext, msg);
+                              } catch (e) {
+                                if (context.mounted) Navigator.pop(context);
+                                if (parentContext.mounted)
+                                  _showResultDialog(
+                                      parentContext, e.toString());
+                              }
+                            },
+                      child: isSubmitting
+                          ? const CupertinoActivityIndicator()
+                          : Text(encrypt ? 'Encrypt' : 'Decrypt'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-        ]))),
-      ]),
-    )));
+        ),
+      ),
+    );
+  }
+
+  void _showPrivateSendSheet(BuildContext context) {
+    final parentContext = context;
+    final addressController = TextEditingController();
+    final amountController = TextEditingController();
+    var isSubmitting = false;
+
+    showCupertinoModalPopup(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => _keyboardAwareSheet(
+          context,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+              color: Color(0xFF1C1C1E),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SafeArea(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Private Send',
+                      style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Send from encrypted balance using native stealth transfer preparation.',
+                      style: TextStyle(color: Colors.white54),
+                    ),
+                    const SizedBox(height: 20),
+                    CupertinoTextField(
+                      controller: addressController,
+                      placeholder: 'Recipient Octra address',
+                      style: const TextStyle(color: Colors.white),
+                      placeholderStyle: const TextStyle(color: Colors.white38),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white10),
+                      ),
+                      padding: const EdgeInsets.all(16),
+                    ),
+                    const SizedBox(height: 12),
+                    CupertinoTextField(
+                      controller: amountController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      placeholder: 'Amount in OCT',
+                      style: const TextStyle(color: Colors.white),
+                      placeholderStyle: const TextStyle(color: Colors.white38),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white10),
+                      ),
+                      padding: const EdgeInsets.all(16),
+                    ),
+                    const SizedBox(height: 20),
+                    CupertinoButton.filled(
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              final to = addressController.text.trim();
+                              final amount =
+                                  double.tryParse(amountController.text.trim());
+                              if (to.isEmpty || amount == null || amount <= 0) {
+                                _showResultDialog(context,
+                                    'Enter a recipient address and valid amount');
+                                return;
+                              }
+                              setState(() {
+                                isSubmitting = true;
+                              });
+                              try {
+                                final confirmed = await _confirmFeeAndSecurity(
+                                  parentContext,
+                                  title: 'Confirm Private Send',
+                                  feeOperation: 'stealth',
+                                  amountLabel: '$amount private OCT',
+                                );
+                                if (!confirmed) {
+                                  setState(() {
+                                    isSubmitting = false;
+                                  });
+                                  return;
+                                }
+                                final wallet = context.read<WalletController>();
+                                final res = await wallet.makePrivateTransfer(
+                                    to, amount);
+                                if (context.mounted) Navigator.pop(context);
+                                final err = wallet.rpc.rpcError(res);
+                                final result = wallet.rpc.rpcResult(res);
+                                final msg = err ??
+                                    (result is Map && result['tx_hash'] != null
+                                        ? 'Submitted: ${result['tx_hash']}'
+                                        : res.text);
+                                if (parentContext.mounted)
+                                  _showResultDialog(parentContext, msg);
+                              } catch (e) {
+                                if (context.mounted) Navigator.pop(context);
+                                if (parentContext.mounted)
+                                  _showResultDialog(
+                                      parentContext, e.toString());
+                              }
+                            },
+                      child: isSubmitting
+                          ? const CupertinoActivityIndicator()
+                          : const Text('Send Privately'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showStealthClaimsSheet(BuildContext context) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (context) => const _StealthClaimsSheet(),
+    );
+  }
+
+  void _showTokensSheet(BuildContext context) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (context) => const _TokensSheet(),
+    );
+  }
+
+  void _showBulkSendSheet(BuildContext context) {
+    final parentContext = context;
+    final rows = List.generate(
+      5,
+      (_) => {
+        'to': TextEditingController(),
+        'amount': TextEditingController(),
+      },
+    );
+    var isSubmitting = false;
+
+    showCupertinoModalPopup(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => _keyboardAwareSheet(
+          context,
+          maxHeightFactor: 0.92,
+          child: Container(
+            height: MediaQuery.of(context).size.height * 0.84,
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+              color: Color(0xFF1C1C1E),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SafeArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Bulk Public Send',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Submit up to 5 public transfers with sequential nonces.',
+                    style: TextStyle(color: Colors.white54),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: rows.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final row = rows[index];
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.white10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Recipient ${index + 1}',
+                                style: const TextStyle(color: Colors.white54),
+                              ),
+                              const SizedBox(height: 8),
+                              _walletTextField(row['to']!, 'Address'),
+                              const SizedBox(height: 8),
+                              _walletTextField(
+                                row['amount']!,
+                                'Amount in OCT',
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  CupertinoButton.filled(
+                    onPressed: isSubmitting
+                        ? null
+                        : () async {
+                            final recipients = rows
+                                .map((row) => {
+                                      'to': row['to']!.text.trim(),
+                                      'amount': row['amount']!.text.trim(),
+                                    })
+                                .where((item) =>
+                                    item['to']!.isNotEmpty ||
+                                    item['amount']!.isNotEmpty)
+                                .toList();
+                            if (recipients.isEmpty) {
+                              _showResultDialog(
+                                  context, 'Enter at least one recipient');
+                              return;
+                            }
+                            setState(() {
+                              isSubmitting = true;
+                            });
+                            try {
+                              final totalAmount = recipients.fold<double>(
+                                0,
+                                (sum, item) =>
+                                    sum +
+                                    (double.tryParse(item['amount'] ?? '') ??
+                                        0),
+                              );
+                              final confirmed = await _confirmFeeAndSecurity(
+                                parentContext,
+                                title: 'Confirm Bulk Send',
+                                feeOperation: 'standard',
+                                amountLabel:
+                                    '$totalAmount OCT across ${recipients.length} recipient(s)',
+                                publicAmount: totalAmount,
+                              );
+                              if (!confirmed) {
+                                setState(() {
+                                  isSubmitting = false;
+                                });
+                                return;
+                              }
+                              final wallet = context.read<WalletController>();
+                              final responses = await wallet
+                                  .sendBulkPublicTransfers(recipients);
+                              if (context.mounted) Navigator.pop(context);
+                              final okCount = responses
+                                  .where((res) =>
+                                      wallet.rpc.rpcError(res) == null &&
+                                      res.statusCode != 0)
+                                  .length;
+                              final firstError = responses
+                                  .map((res) => wallet.rpc.rpcError(res))
+                                  .whereType<String>()
+                                  .cast<String?>()
+                                  .firstWhere((err) => err != null,
+                                      orElse: () => null);
+                              final msg = firstError == null
+                                  ? 'Submitted $okCount transaction(s)'
+                                  : 'Submitted $okCount transaction(s), then failed: $firstError';
+                              if (parentContext.mounted)
+                                _showResultDialog(parentContext, msg);
+                            } catch (e) {
+                              if (context.mounted) Navigator.pop(context);
+                              if (parentContext.mounted)
+                                _showResultDialog(parentContext, e.toString());
+                            }
+                          },
+                    child: isSubmitting
+                        ? const CupertinoActivityIndicator()
+                        : const Text('Submit Bulk'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _registerPvacKey(BuildContext context) async {
+    final wallet = context.read<WalletController>();
+    wallet.registerCurrentPvacInBackground();
+    if (context.mounted) {
+      _showResultDialog(
+        context,
+        'PVAC registration is running in the background. It is required once per wallet address.',
+      );
+    }
+  }
+
+  void _showResultDialog(BuildContext context, String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Octra Wallet'),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  CupertinoTextField _walletTextField(
+    TextEditingController controller,
+    String placeholder, {
+    TextInputType? keyboardType,
+  }) {
+    return CupertinoTextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      placeholder: placeholder,
+      style: const TextStyle(color: Colors.white),
+      placeholderStyle: const TextStyle(color: Colors.white38),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white10),
+      ),
+      padding: const EdgeInsets.all(16),
+    );
+  }
+
+  void _showRpcResult(
+      BuildContext context, WalletController wallet, dynamic res) {
+    final err = wallet.rpc.rpcError(res);
+    final result = wallet.rpc.rpcResult(res);
+    final msg = err ??
+        (result is Map && result['tx_hash'] != null
+            ? 'Submitted: ${result['tx_hash']}'
+            : res.text);
+    if (context.mounted) _showResultDialog(context, msg);
   }
 }
 
-// Legacy compatibility aliases
-class DashboardTab extends StatelessWidget { const DashboardTab({super.key}); @override Widget build(BuildContext context) => const HomeTabScaffold(); }
-class PrivateTab extends StatelessWidget { const PrivateTab({super.key}); @override Widget build(BuildContext context) => const HomeTabScaffold(); }
-class EncryptTab extends StatelessWidget { const EncryptTab({super.key}); @override Widget build(BuildContext context) => const HomeTabScaffold(); }
-class HistoryTab extends StatelessWidget { const HistoryTab({super.key}); @override Widget build(BuildContext context) => const HomeTabScaffold(); }
-class SettingsTab extends StatelessWidget { const SettingsTab({super.key}); @override Widget build(BuildContext context) => const HomeTabScaffold(); }
+class _StealthClaimsSheet extends StatefulWidget {
+  const _StealthClaimsSheet();
+
+  @override
+  State<_StealthClaimsSheet> createState() => _StealthClaimsSheetState();
+}
+
+class _StealthClaimsSheetState extends State<_StealthClaimsSheet> {
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _claims = const [];
+  final Set<String> _claiming = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _scan();
+  }
+
+  Future<void> _scan() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final claims =
+          await context.read<WalletController>().scanStealthTransfers();
+      if (!mounted) return;
+      setState(() {
+        _claims = claims;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _claim(Map<String, dynamic> claim) async {
+    final id = claim['id']?.toString() ?? '';
+    if (id.isEmpty) return;
+
+    final amountRaw = int.tryParse(claim['amount_raw']?.toString() ?? '0') ?? 0;
+    final confirmed = await _confirmFeeAndSecurity(
+      context,
+      title: 'Confirm Stealth Claim',
+      feeOperation: 'claim',
+      amountLabel: '${amountRaw / _octMicro} private OCT',
+    );
+    if (!confirmed) return;
+    if (!mounted) return;
+
+    setState(() {
+      _claiming.add(id);
+      _error = null;
+    });
+
+    try {
+      final wallet = context.read<WalletController>();
+      final res = await wallet.claimStealthTransfer(claim);
+      final err = wallet.rpc.rpcError(res);
+      if (err != null) {
+        throw StateError(err);
+      }
+      await _scan();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _claiming.remove(id);
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.78,
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C1E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Stealth Claims',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _loading ? null : _scan,
+                  child: const Icon(CupertinoIcons.refresh),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Scan stealth outputs with your local view key and claim matching transfers.',
+              style: TextStyle(color: Colors.white54),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!,
+                  style: const TextStyle(color: CupertinoColors.systemRed)),
+            ],
+            const SizedBox(height: 20),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CupertinoActivityIndicator())
+                  : _claims.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'No claimable stealth transfers found',
+                            style: TextStyle(color: Colors.white54),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: _claims.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final claim = _claims[index];
+                            final id = claim['id']?.toString() ?? '';
+                            final amountRaw = int.tryParse(
+                                    claim['amount_raw']?.toString() ?? '0') ??
+                                0;
+                            final amount = amountRaw / 1000000.0;
+                            final isClaiming = _claiming.contains(id);
+
+                            return Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Colors.white10),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${amount.toStringAsFixed(6)} OCT',
+                                    style: GoogleFonts.outfit(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    id.length > 20
+                                        ? '${id.substring(0, 10)}...${id.substring(id.length - 8)}'
+                                        : id,
+                                    style:
+                                        const TextStyle(color: Colors.white54),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  CupertinoButton.filled(
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 10),
+                                    onPressed:
+                                        isClaiming ? null : () => _claim(claim),
+                                    child: isClaiming
+                                        ? const CupertinoActivityIndicator()
+                                        : const Text('Claim'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TokensSheet extends StatefulWidget {
+  const _TokensSheet();
+
+  @override
+  State<_TokensSheet> createState() => _TokensSheetState();
+}
+
+class _TokensSheetState extends State<_TokensSheet> {
+  final TextEditingController _importController = TextEditingController();
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _tokens = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final tokens = await context.read<WalletController>().loadTokens();
+      if (!mounted) return;
+      setState(() {
+        _tokens = tokens;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _importToken() async {
+    final address = _importController.text.trim();
+    if (address.isEmpty) return;
+    setState(() {
+      _error = null;
+    });
+    try {
+      final token =
+          await context.read<WalletController>().importCustomToken(address);
+      if (!mounted) return;
+      if (token == null) {
+        setState(() {
+          _error = 'Token contract not found or missing symbol metadata';
+        });
+        return;
+      }
+      _importController.clear();
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+      });
+    }
+  }
+
+  Future<void> _transferToken(Map<String, dynamic> token) async {
+    final parentContext = context;
+    final toController = TextEditingController();
+    final amountController = TextEditingController();
+    var isSubmitting = false;
+
+    await showCupertinoModalPopup(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => Container(
+          padding: const EdgeInsets.all(24),
+          decoration: const BoxDecoration(
+            color: Color(0xFF1C1C1E),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Send ${token['symbol'] ?? 'Token'}',
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                CupertinoTextField(
+                  controller: toController,
+                  placeholder: 'Recipient Octra address',
+                  style: const TextStyle(color: Colors.white),
+                  placeholderStyle: const TextStyle(color: Colors.white38),
+                  decoration: _fieldDecoration(),
+                  padding: const EdgeInsets.all(16),
+                ),
+                const SizedBox(height: 12),
+                CupertinoTextField(
+                  controller: amountController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  placeholder: 'Amount',
+                  style: const TextStyle(color: Colors.white),
+                  placeholderStyle: const TextStyle(color: Colors.white38),
+                  decoration: _fieldDecoration(),
+                  padding: const EdgeInsets.all(16),
+                ),
+                const SizedBox(height: 20),
+                CupertinoButton.filled(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          if (toController.text.trim().isEmpty ||
+                              amountController.text.trim().isEmpty) {
+                            return;
+                          }
+                          setState(() {
+                            isSubmitting = true;
+                          });
+                          try {
+                            final confirmed = await _confirmFeeAndSecurity(
+                              parentContext,
+                              title: 'Confirm Token Send',
+                              feeOperation: 'call',
+                              amountLabel:
+                                  '${amountController.text.trim()} ${token['symbol'] ?? 'Token'}',
+                            );
+                            if (!confirmed) {
+                              setState(() {
+                                isSubmitting = false;
+                              });
+                              return;
+                            }
+                            final wallet =
+                                parentContext.read<WalletController>();
+                            final res = await wallet.transferToken(
+                              token,
+                              toController.text.trim(),
+                              amountController.text.trim(),
+                            );
+                            if (context.mounted) Navigator.pop(context);
+                            final err = wallet.rpc.rpcError(res);
+                            final result = wallet.rpc.rpcResult(res);
+                            final msg = err ??
+                                (result is Map && result['tx_hash'] != null
+                                    ? 'Submitted: ${result['tx_hash']}'
+                                    : res.text);
+                            if (parentContext.mounted) {
+                              _showTokenDialog(parentContext, msg);
+                            }
+                          } catch (e) {
+                            if (context.mounted) Navigator.pop(context);
+                            if (parentContext.mounted) {
+                              _showTokenDialog(parentContext, e.toString());
+                            }
+                          }
+                        },
+                  child: isSubmitting
+                      ? const CupertinoActivityIndicator()
+                      : const Text('Send Token'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.82,
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C1E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Tokens',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _loading ? null : _load,
+                  child: const Icon(CupertinoIcons.refresh),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: CupertinoTextField(
+                    controller: _importController,
+                    placeholder: 'Import token contract address',
+                    style: const TextStyle(color: Colors.white),
+                    placeholderStyle: const TextStyle(color: Colors.white38),
+                    decoration: _fieldDecoration(),
+                    padding: const EdgeInsets.all(14),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                CupertinoButton.filled(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  onPressed: _importToken,
+                  child: const Text('Import'),
+                ),
+              ],
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!,
+                  style: const TextStyle(color: CupertinoColors.systemRed)),
+            ],
+            const SizedBox(height: 16),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CupertinoActivityIndicator())
+                  : _tokens.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'No tokens found',
+                            style: TextStyle(color: Colors.white54),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: _tokens.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final token = _tokens[index];
+                            final balance = _formatTokenBalance(token);
+                            return Dismissible(
+                              key: ValueKey(token['address'].toString()),
+                              direction: DismissDirection.endToStart,
+                              background: Container(
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.only(right: 20),
+                                decoration: BoxDecoration(
+                                  color: CupertinoColors.systemRed
+                                      .withOpacity(0.24),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: const Icon(
+                                  CupertinoIcons.delete,
+                                  color: CupertinoColors.systemRed,
+                                ),
+                              ),
+                              onDismissed: (_) {
+                                final address = token['address'].toString();
+                                setState(() {
+                                  _tokens = _tokens
+                                      .where((item) =>
+                                          item['address'].toString() != address)
+                                      .toList();
+                                });
+                                context
+                                    .read<WalletController>()
+                                    .removeCustomToken(address);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.06),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: Colors.white10),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '${token['symbol']}',
+                                            style: GoogleFonts.outfit(
+                                              color: Colors.white,
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            '${token['name']} - $balance',
+                                            style: const TextStyle(
+                                                color: Colors.white54),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    CupertinoButton(
+                                      padding: EdgeInsets.zero,
+                                      onPressed: () => _transferToken(token),
+                                      child: const Text('Send'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  BoxDecoration _fieldDecoration() {
+    return BoxDecoration(
+      color: Colors.white.withOpacity(0.08),
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: Colors.white10),
+    );
+  }
+
+  String _formatTokenBalance(Map<String, dynamic> token) {
+    final raw = token['balance']?.toString() ?? '0';
+    final decimals = int.tryParse(token['decimals']?.toString() ?? '0') ?? 0;
+    if (decimals <= 0) return '$raw ${token['symbol']}';
+    var padded = raw.padLeft(decimals + 1, '0');
+    final split = padded.length - decimals;
+    final whole = padded.substring(0, split);
+    var frac = padded.substring(split).replaceFirst(RegExp(r'0+$'), '');
+    return frac.isEmpty
+        ? '$whole ${token['symbol']}'
+        : '$whole.$frac ${token['symbol']}';
+  }
+
+  void _showTokenDialog(BuildContext context, String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Tokens'),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Widget _buildTransactionRow(BuildContext context, Map<String, dynamic> tx) {
+  final hash = (tx['hash'] ?? tx['tx_hash'] ?? '').toString();
+  final direction = tx['direction'] ?? 'IN';
+  final opType = (tx['op_type'] ?? 'standard').toString();
+  final isIn = direction == 'IN';
+  final isPrivate =
+      opType == 'stealth' || opType == 'claim' || opType == 'private';
+  final title = (tx['tx_title'] ?? _titleForTransaction(tx)).toString();
+  final amountLabel =
+      (tx['amount_label'] ?? _amountLabelForTransaction(tx)).toString();
+  final color = _colorForTransaction(tx, isIn);
+  final icon = _iconForTransaction(tx, isIn);
+
+  return GestureDetector(
+    onTap: () => _showTransactionDetails(context, tx),
+    behavior: HitTestBehavior.opaque,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.white10)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              color: color,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  hash.length > 16
+                      ? '${hash.substring(0, 8)}...${hash.substring(hash.length - 6)}'
+                      : hash,
+                  style: const TextStyle(color: Colors.grey, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${isIn && !isPrivate ? '+' : direction == 'OUT' && amountLabel != '0 OCT' ? '-' : ''}$amountLabel',
+                style: GoogleFonts.outfit(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+String _titleForTransaction(Map<String, dynamic> tx) {
+  final op = (tx['op_type'] ?? 'standard').toString();
+  if (op == 'standard' || op.isEmpty)
+    return tx['direction'] == 'IN' ? 'Received OCT' : 'Sent OCT';
+  if (op == 'call') {
+    final method = tx['encrypted_data']?.toString();
+    if (method == 'transfer') return 'Token Transfer';
+    if (method != null && method.isNotEmpty) return '$method()';
+    return 'Program Call';
+  }
+  const labels = {
+    'stealth': 'Stealth Transfer',
+    'claim': 'Stealth Claim',
+    'encrypt': 'Encrypt Balance',
+    'decrypt': 'Decrypt Balance',
+    'private': 'Private Transfer',
+    'recrypt': 'Recrypt',
+    'deploy': 'Program Deploy',
+    'upgrade': 'Program Upgrade',
+  };
+  return labels[op] ?? op.replaceAll('_', ' ');
+}
+
+String _amountLabelForTransaction(Map<String, dynamic> tx) {
+  final op = (tx['op_type'] ?? '').toString();
+  if (op == 'stealth' || op == 'claim' || op == 'private') return 'Private';
+  final rawText = (tx['amount_raw'] ?? tx['amount'] ?? '0').toString();
+  final raw = double.tryParse(rawText) ?? 0;
+  final amount = raw.abs() >= _octMicro ? raw / _octMicro : raw;
+  if (amount == 0) return '0 OCT';
+  if (amount > 0 && amount < 0.001) return '< 0.001 OCT';
+  return '${amount.toStringAsFixed(6).replaceFirst(RegExp(r'\.?0+$'), '')} OCT';
+}
+
+Color _colorForTransaction(Map<String, dynamic> tx, bool isIn) {
+  final op = (tx['op_type'] ?? 'standard').toString();
+  if (op == 'deploy' || op == 'call' || op == 'upgrade')
+    return CupertinoColors.systemPurple;
+  if (op == 'encrypt' ||
+      op == 'decrypt' ||
+      op == 'stealth' ||
+      op == 'claim' ||
+      op == 'private') {
+    return CupertinoColors.systemTeal;
+  }
+  return isIn ? Colors.green : Colors.red;
+}
+
+IconData _iconForTransaction(Map<String, dynamic> tx, bool isIn) {
+  final op = (tx['op_type'] ?? 'standard').toString();
+  if (op == 'deploy') return CupertinoIcons.cube_box_fill;
+  if (op == 'call' || op == 'upgrade')
+    return CupertinoIcons.chevron_left_slash_chevron_right;
+  if (op == 'encrypt') return CupertinoIcons.lock_rotation;
+  if (op == 'decrypt') return CupertinoIcons.lock_open;
+  if (op == 'stealth' || op == 'claim' || op == 'private')
+    return CupertinoIcons.eye_slash_fill;
+  return isIn ? CupertinoIcons.arrow_down_left : CupertinoIcons.arrow_up_right;
+}
+
+void _showTransactionDetails(BuildContext context, Map<String, dynamic> tx) {
+  showCupertinoModalPopup(
+    context: context,
+    builder: (context) => _TransactionDetailsSheet(initialTx: tx),
+  );
+}
+
+class _TransactionDetailsSheet extends StatefulWidget {
+  final Map<String, dynamic> initialTx;
+
+  const _TransactionDetailsSheet({super.key, required this.initialTx});
+
+  @override
+  State<_TransactionDetailsSheet> createState() =>
+      _TransactionDetailsSheetState();
+}
+
+class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
+  Map<String, dynamic>? fullTx;
+  bool loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch();
+  }
+
+  Future<void> _fetch() async {
+    final wallet = context.read<WalletController>();
+    final hash = widget.initialTx['hash'];
+    if (hash != null && hash.isNotEmpty) {
+      final res = await wallet.getTransactionFullDetails(hash);
+      if (mounted) {
+        setState(() {
+          if (res != null) {
+            fullTx = res;
+          }
+          loading = false;
+        });
+      }
+    } else {
+      loading = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final displayTx =
+        fullTx != null ? (fullTx!['parsed_tx'] ?? fullTx!) : widget.initialTx;
+    final meta = fullTx ?? widget.initialTx;
+
+    final hash = displayTx['hash'] ??
+        displayTx['tx_hash'] ??
+        widget.initialTx['hash'] ??
+        '';
+    final direction = widget.initialTx['direction'] ?? 'IN';
+    final isIn = direction == 'IN';
+    final title =
+        widget.initialTx['tx_title'] ?? _titleForTransaction(displayTx);
+    final amountLabel = displayTx['amount_raw'] != null
+        ? _amountLabelForTransaction(displayTx)
+        : (widget.initialTx['amount_label'] ??
+            _amountLabelForTransaction(displayTx));
+    final status = meta['status'] ?? 'Unknown';
+    final epoch = meta['epoch'];
+    final color = _colorForTransaction(displayTx, isIn);
+    final icon = _iconForTransaction(displayTx, isIn);
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C1E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 4,
+              width: 40,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            if (loading)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: CupertinoActivityIndicator(),
+              ),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                color: color,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              title.toString(),
+              style: GoogleFonts.outfit(
+                color: Colors.white70,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              amountLabel.toString(),
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: isIn
+                    ? Colors.green.withOpacity(0.2)
+                    : Colors.red.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (status == 'confirmed')
+                    const Icon(Icons.check, size: 14, color: Colors.green)
+                  else
+                    const Icon(Icons.access_time,
+                        size: 14, color: Colors.orange),
+                  const SizedBox(width: 4),
+                  Text(
+                    status.toUpperCase(),
+                    style: TextStyle(
+                      color:
+                          status == 'confirmed' ? Colors.green : Colors.orange,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+            _buildDetailRow(context, 'From', displayTx['from'] ?? ''),
+            _buildDetailRow(
+                context, 'To', displayTx['to'] ?? displayTx['to_'] ?? ''),
+            _buildDetailRow(context, 'Hash', hash),
+            if (epoch != null)
+              _buildDetailRow(context, 'Epoch', epoch.toString()),
+            if (displayTx['timestamp'] != null)
+              Builder(
+                builder: (_) {
+                  final ts =
+                      double.tryParse(displayTx['timestamp'].toString()) ?? 0;
+                  if (ts > 0) {
+                    final dt = DateTime.fromMillisecondsSinceEpoch(
+                        (ts * 1000).toInt());
+                    return _buildDetailRow(
+                        context, 'Time', dt.toString().split('.')[0]);
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+            if (displayTx['ou'] != null)
+              _buildDetailRow(context, 'Fee', '${displayTx['ou']} OU'),
+            if (displayTx['nonce'] != null)
+              _buildDetailRow(context, 'Nonce', displayTx['nonce'].toString()),
+            if (displayTx['message'] != null)
+              _buildDetailRow(
+                  context, 'Message', displayTx['message'].toString()),
+            if (hash.toString().isNotEmpty) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: CupertinoButton.filled(
+                  onPressed: () => _openExternalUrl(
+                      'https://octrascan.io/tx.html?hash=$hash'),
+                  child: const Text('View on OctraScan'),
+                ),
+              ),
+            ],
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Widget _buildDetailRow(BuildContext context, String label, String value) {
+  if (value.isEmpty) return const SizedBox.shrink();
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 16),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.grey)),
+        const SizedBox(width: 16),
+        Expanded(
+          child: GestureDetector(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: value));
+            },
+            child: Text(
+              value.length > 20
+                  ? '${value.substring(0, 8)}...${value.substring(value.length - 8)}'
+                  : value,
+              textAlign: TextAlign.end,
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        const Icon(CupertinoIcons.doc_on_doc, size: 14, color: Colors.blueGrey),
+      ],
+    ),
+  );
+}
+
+class HistoryTab extends StatelessWidget {
+  const HistoryTab({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final walletCtrl = context.watch<WalletController>();
+    final currentAddress = walletCtrl.currentWallet?.address;
+    final visibleHistory = walletCtrl.historyWalletAddress == currentAddress
+        ? walletCtrl.history
+        : <Map<String, dynamic>>[];
+    return CupertinoPageScaffold(
+      backgroundColor: Colors.black,
+      child: CustomScrollView(
+        slivers: [
+          const CupertinoSliverNavigationBar(
+            largeTitle: Text('History'),
+            backgroundColor: Color(0xCC1C1C1E),
+          ),
+          if (walletCtrl.isLoading)
+            const SliverFillRemaining(
+              child: Center(child: CupertinoActivityIndicator()),
+            )
+          else if (visibleHistory.isEmpty)
+            const SliverFillRemaining(
+              child: Center(
+                child: Text('No transactions',
+                    style: TextStyle(color: Colors.grey)),
+              ),
+            )
+          else
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final tx = visibleHistory[index];
+                  return _buildTransactionRow(context, tx);
+                },
+                childCount: visibleHistory.length,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

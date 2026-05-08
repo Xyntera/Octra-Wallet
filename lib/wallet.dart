@@ -24,8 +24,9 @@ class WalletController extends ChangeNotifier {
 
   Future<bool> get isSecurityEnabled async {
     final val = await _storage.read(key: 'security_enabled');
-    if (val == null) return await hasPin; // Default to enabled if PIN exists but no setting
-    return val == 'true'; 
+    if (val == null)
+      return await hasPin; // Default to enabled if PIN exists but no setting
+    return val == 'true';
   }
 
   Future<void> setSecurityEnabled(bool enabled) async {
@@ -36,7 +37,7 @@ class WalletController extends ChangeNotifier {
   Future<void> setPin(String pin) async {
     await _storage.write(key: 'user_pin', value: pin);
     // Auto-enable security when setting PIN
-    await setSecurityEnabled(true); 
+    await setSecurityEnabled(true);
     notifyListeners();
   }
 
@@ -44,26 +45,27 @@ class WalletController extends ChangeNotifier {
     final stored = await _storage.read(key: 'user_pin');
     return stored == pin;
   }
-  
+
   List<Wallet> wallets = [];
   Wallet? currentWallet;
-  
+
   RpcClient rpc = RpcClient();
   final OctraCoreBridge nativeCore = createOctraCoreBridge();
   late final PvacOperations pvac = PvacOperations(nativeCore);
-  
+
   // State
   double publicBalance = 0.0;
   int nonce = 0;
-  
+
   // Encrypted State
   double encryptedBalance = 0.0;
   int encryptedRaw = 0;
   List<dynamic> pendingPrivateTransfers = [];
-  
+
   // History
   List<Map<String, dynamic>> history = [];
   List<Map<String, dynamic>> tokens = [];
+  final Map<String, Map<String, String>> _tokenMetaCache = {};
   bool isLoading = false;
 
   bool get hasWallet => currentWallet != null;
@@ -83,9 +85,9 @@ class WalletController extends ChangeNotifier {
           // Load last selected
           final lastAddr = await _storage.read(key: 'last_selected_wallet');
           if (lastAddr != null && wallets.any((w) => w.address == lastAddr)) {
-             currentWallet = wallets.firstWhere((w) => w.address == lastAddr);
+            currentWallet = wallets.firstWhere((w) => w.address == lastAddr);
           } else {
-             currentWallet = wallets.first; // Default to first
+            currentWallet = wallets.first; // Default to first
           }
           refresh(); // Background update (fixes startup lag)
         }
@@ -118,23 +120,36 @@ class WalletController extends ChangeNotifier {
   }
 
   /// SAVE IMPORTED/GENERATED WALLET
-  Future<void> addWallet(String address, String privateKeyBase64, [String? mnemonic]) async {
+  Future<void> addWallet(String address, String privateKeyBase64,
+      [String? mnemonic]) async {
     // Check duplicate
     if (wallets.any((w) => w.address == address)) {
-       // Just switch to it
-       currentWallet = wallets.firstWhere((w) => w.address == address);
+      // Just switch to it
+      currentWallet = wallets.firstWhere((w) => w.address == address);
     } else {
       final name = "Wallet ${wallets.length + 1}";
-      final colors = [0xFF357AF6, 0xFF32D74B, 0xFFFF9F0A, 0xFFFF375F, 0xFFBF5AF2, 0xFFFFD60A, 0xFF64D2FF, 0xFF8E8E93, 0xFF007AFF, 0xFF5856D6, 0xFFFF2D55, 0xFFAF52DE];
+      final colors = [
+        0xFF357AF6,
+        0xFF32D74B,
+        0xFFFF9F0A,
+        0xFFFF375F,
+        0xFFBF5AF2,
+        0xFFFFD60A,
+        0xFF64D2FF,
+        0xFF8E8E93,
+        0xFF007AFF,
+        0xFF5856D6,
+        0xFFFF2D55,
+        0xFFAF52DE
+      ];
       final color = colors[wallets.length % colors.length];
 
       final newWallet = Wallet(
-        address: address, 
-        privateKeyBase64: privateKeyBase64, 
-        mnemonic: mnemonic,
-        name: name,
-        color: color
-      );
+          address: address,
+          privateKeyBase64: privateKeyBase64,
+          mnemonic: mnemonic,
+          name: name,
+          color: color);
       wallets.add(newWallet);
       currentWallet = newWallet;
       await _saveWallets();
@@ -146,7 +161,7 @@ class WalletController extends ChangeNotifier {
   Future<void> updateWallet(String address, {String? name, int? color}) async {
     final index = wallets.indexWhere((w) => w.address == address);
     if (index == -1) return;
-    
+
     final old = wallets[index];
     wallets[index] = Wallet(
       address: old.address,
@@ -155,29 +170,30 @@ class WalletController extends ChangeNotifier {
       name: name ?? old.name,
       color: color ?? old.color,
     );
-    
+
     if (currentWallet?.address == address) {
       currentWallet = wallets[index];
     }
-    
+
     await _saveWallets();
     notifyListeners();
   }
 
   Future<void> deleteWallet(String address) async {
     wallets.removeWhere((w) => w.address == address);
-    
+
     if (currentWallet?.address == address) {
       if (wallets.isNotEmpty) {
         currentWallet = wallets.first;
-        _storage.write(key: 'last_selected_wallet', value: currentWallet!.address);
+        _storage.write(
+            key: 'last_selected_wallet', value: currentWallet!.address);
         refresh();
       } else {
         currentWallet = null;
         _storage.delete(key: 'last_selected_wallet');
       }
     }
-    
+
     await _saveWallets();
     notifyListeners();
   }
@@ -186,20 +202,30 @@ class WalletController extends ChangeNotifier {
   Future<Map<String, String>?> processInput(String input) async {
     Uint8List privateKeyBytes;
     String? mnemonic;
-    
+
     try {
-      if (input.trim().split(RegExp(r'\s+')).length >= 12) {
-        mnemonic = input.trim();
+      final normalizedInput = input.trim().replaceAll(RegExp(r'\s+'), ' ');
+      final wordCount =
+          normalizedInput.isEmpty ? 0 : normalizedInput.split(' ').length;
+      if (wordCount >= 12) {
+        mnemonic = normalizedInput.toLowerCase();
+        if (!bip39.validateMnemonic(mnemonic)) {
+          return null;
+        }
         final seed = bip39.mnemonicToSeed(mnemonic);
-        privateKeyBytes = await crypto_utils.deriveForNetwork(Uint8List.fromList(seed));
+        privateKeyBytes =
+            await crypto_utils.deriveForNetwork(Uint8List.fromList(seed));
       } else {
-        privateKeyBytes = base64Decode(input.trim());
+        privateKeyBytes = _decodePrivateKey(normalizedInput);
       }
+
+      if (privateKeyBytes.length != 32) return null;
 
       final algorithm = Ed25519();
       final keyPair = await algorithm.newKeyPairFromSeed(privateKeyBytes);
       final pubKey = await keyPair.extractPublicKey();
-      final addr = await octraAddressFromPubKey(Uint8List.fromList(pubKey.bytes));
+      final addr =
+          await octraAddressFromPubKey(Uint8List.fromList(pubKey.bytes));
 
       return {
         'address': addr,
@@ -210,6 +236,18 @@ class WalletController extends ChangeNotifier {
       print("Error processing input: $e");
       return null;
     }
+  }
+
+  Uint8List _decodePrivateKey(String input) {
+    final clean = input.trim();
+    if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(clean)) {
+      final bytes = <int>[];
+      for (var i = 0; i < clean.length; i += 2) {
+        bytes.add(int.parse(clean.substring(i, i + 2), radix: 16));
+      }
+      return Uint8List.fromList(bytes);
+    }
+    return base64Decode(clean);
   }
 
   /// REFRESH ALL DATA
@@ -250,7 +288,6 @@ class WalletController extends ChangeNotifier {
 
       await _fetchEncryptedBalance(wallet);
       await _fetchHistory(limit: 20, offset: 0);
-
     } catch (e) {
       print("Refresh error: $e");
     } finally {
@@ -261,31 +298,162 @@ class WalletController extends ChangeNotifier {
 
   Future<void> _fetchHistory({int limit = 20, int offset = 0}) async {
     if (currentWallet == null) return;
+    final wallet = currentWallet!;
     try {
-      final res = await rpc.getAddressInfo("${currentWallet!.address}?limit=$limit");
-      final txList = res?['recent_transactions'] ?? res?['transactions'];
+      final res = await rpc.getTransactionsByAddress(
+        wallet.address,
+        limit: limit,
+        offset: offset,
+      );
+      final txList = res?['transactions'] ?? res?['recent_transactions'];
       if (txList is List) {
-        final List<dynamic> recents = txList;
-        history = recents.map((tx) {
-          final Map<String, dynamic> newTx = Map.from(tx);
-
-          final String from = (tx['from'] ?? "").toString();
-          final bool isOut = from == currentWallet!.address;
-          newTx['direction'] = isOut ? 'OUT' : 'IN';
-
-          final rawAmt = double.tryParse(
-                tx['amount_raw']?.toString() ?? tx['amount']?.toString() ?? '0',
-              ) ??
-              0.0;
-          final displayAmt = rawAmt.abs() >= 1000000 ? rawAmt / 1000000.0 : rawAmt;
-          newTx['amount'] = displayAmt.toString();
-
-          return newTx;
-        }).toList();
+        history = await Future.wait(
+          txList.whereType<Map>().map((tx) => _normalizeHistoryTx(
+              Map<String, dynamic>.from(tx), wallet.address)),
+        );
       }
     } catch (e) {
       print("History fetch error: $e");
     }
+  }
+
+  Future<Map<String, dynamic>> _normalizeHistoryTx(
+    Map<String, dynamic> tx,
+    String walletAddress,
+  ) async {
+    final normalized = Map<String, dynamic>.from(tx);
+    final hash = (tx['hash'] ?? tx['tx_hash'] ?? '').toString();
+    final from = (tx['from'] ?? '').toString();
+    final to = (tx['to_'] ?? tx['to'] ?? '').toString();
+    final opType = (tx['op_type'] ?? 'standard').toString();
+
+    normalized['hash'] = hash;
+    normalized['from'] = from;
+    normalized['to'] = to;
+    normalized['op_type'] = opType;
+
+    var displayTo = to;
+    var title = _titleForOp(opType, tx);
+    var amountLabel = _formatOctAmount(tx['amount_raw'] ?? tx['amount']);
+    var tokenSymbol = '';
+
+    if (opType == 'call' && tx['encrypted_data']?.toString() == 'transfer') {
+      final parsed = _parseTokenTransfer(tx);
+      if (parsed != null) {
+        displayTo = parsed['to'] ?? displayTo;
+        final tokenMeta = await _loadTokenMeta(to);
+        tokenSymbol = tokenMeta['symbol'] ?? '';
+        final decimals = int.tryParse(tokenMeta['decimals'] ?? '0') ?? 0;
+        amountLabel =
+            _formatTokenAmount(parsed['amount'] ?? '0', decimals, tokenSymbol);
+        title =
+            tokenSymbol.isEmpty ? 'Token Transfer' : '$tokenSymbol Transfer';
+      }
+    } else if (opType == 'deploy') {
+      final deployArgs = _parseJsonList(tx['message']);
+      if (deployArgs != null && deployArgs.length >= 2) {
+        tokenSymbol = deployArgs[1].toString();
+        title = tokenSymbol.isEmpty ? 'Program Deploy' : 'Deploy $tokenSymbol';
+      }
+    } else if (opType == 'stealth' || opType == 'claim') {
+      amountLabel = 'Private';
+    }
+
+    final isOut = from == walletAddress;
+    final isIn = displayTo == walletAddress && !isOut;
+    normalized['direction'] = isOut ? 'OUT' : (isIn ? 'IN' : 'SELF');
+    normalized['display_to'] = displayTo;
+    normalized['tx_title'] = title;
+    normalized['amount_label'] = amountLabel;
+    normalized['token_symbol'] = tokenSymbol;
+    normalized['explorer_url'] =
+        hash.isEmpty ? '' : 'https://octrascan.io/tx.html?hash=$hash';
+    normalized['amount'] =
+        _octAmountValue(tx['amount_raw'] ?? tx['amount']).toString();
+    return normalized;
+  }
+
+  String _titleForOp(String opType, Map<String, dynamic> tx) {
+    if ((opType.isEmpty || opType == 'standard')) return 'OCT Transfer';
+    if (opType == 'call') {
+      final method = tx['encrypted_data']?.toString();
+      if (method != null && method.isNotEmpty) return '$method()';
+      return 'Program Call';
+    }
+    const labels = {
+      'stealth': 'Stealth Transfer',
+      'claim': 'Stealth Claim',
+      'encrypt': 'Encrypt Balance',
+      'decrypt': 'Decrypt Balance',
+      'private': 'Private Transfer',
+      'recrypt': 'Recrypt',
+      'deploy': 'Program Deploy',
+      'upgrade': 'Program Upgrade',
+    };
+    return labels[opType] ?? opType.replaceAll('_', ' ');
+  }
+
+  Map<String, String>? _parseTokenTransfer(Map<String, dynamic> tx) {
+    final parsed = _parseJsonList(tx['message']);
+    if (parsed == null || parsed.length < 2) return null;
+    return {
+      'to': parsed[0].toString(),
+      'amount': parsed[1].toString(),
+    };
+  }
+
+  List<dynamic>? _parseJsonList(dynamic value) {
+    if (value == null) return null;
+    try {
+      final decoded = jsonDecode(value.toString());
+      return decoded is List ? decoded : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Map<String, String>> _loadTokenMeta(String programAddress) async {
+    if (programAddress.isEmpty) return const {};
+    final cached = _tokenMetaCache[programAddress];
+    if (cached != null) return cached;
+    final symbol = await rpc.programStorageRpc(programAddress, 'symbol') ??
+        await rpc.contractStorageRpc(programAddress, 'symbol');
+    final decimals = await rpc.programStorageRpc(programAddress, 'decimals') ??
+        await rpc.contractStorageRpc(programAddress, 'decimals');
+    final meta = {
+      if (symbol != null) 'symbol': symbol.toString(),
+      if (decimals != null) 'decimals': decimals.toString(),
+    };
+    _tokenMetaCache[programAddress] = meta;
+    return meta;
+  }
+
+  double _octAmountValue(dynamic rawValue) {
+    final text = rawValue?.toString() ?? '0';
+    final raw = double.tryParse(text) ?? 0.0;
+    return raw / kMicro;
+  }
+
+  String _formatOctAmount(dynamic rawValue) {
+    final value = _octAmountValue(rawValue);
+    if (value == 0) return '0 OCT';
+    if (value > 0 && value < 0.001) return '< 0.001 OCT';
+    return '${value.toStringAsFixed(6).replaceFirst(RegExp(r'\.?0+$'), '')} OCT';
+  }
+
+  String _formatTokenAmount(String raw, int decimals, String symbol) {
+    var digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) digits = '0';
+    if (decimals > 0) {
+      while (digits.length <= decimals) {
+        digits = '0$digits';
+      }
+      final split = digits.length - decimals;
+      final whole = digits.substring(0, split);
+      final fraction = digits.substring(split).replaceFirst(RegExp(r'0+$'), '');
+      digits = fraction.isEmpty ? whole : '$whole.$fraction';
+    }
+    return symbol.isEmpty ? digits : '$digits $symbol';
   }
 
   Future<Map<String, dynamic>?> getTransactionFullDetails(String hash) async {
@@ -302,27 +470,30 @@ class WalletController extends ChangeNotifier {
     }
     return null;
   }
-  
+
   /// SEND TRANSACTION
-  Future<RpcResponse> sendTransaction(String to, double amount, String? msg) async {
+  Future<RpcResponse> sendTransaction(
+      String to, double amount, String? msg) async {
     if (currentWallet == null) return RpcResponse(0, "", null);
     final wallet = currentWallet!;
-    
+
     // Refresh nonce first
     await refresh(); // or just get staging
-    
+
     // Get staging nonce
     final staging = await rpc.getStaging();
     int currentNonce = nonce;
     if (staging.containsKey('staged_transactions')) {
-       final staged = staging['staged_transactions'] as List;
-       final myStaged = staged.where((tx) => tx['from'] == wallet.address);
-       if (myStaged.isNotEmpty) {
-          final maxStagedNonce = myStaged.map((tx) => int.parse(tx['nonce'].toString())).reduce((cur, next) => cur > next ? cur : next);
-          if (maxStagedNonce >= currentNonce) {
-            currentNonce = maxStagedNonce;
-          }
-       }
+      final staged = staging['staged_transactions'] as List;
+      final myStaged = staged.where((tx) => tx['from'] == wallet.address);
+      if (myStaged.isNotEmpty) {
+        final maxStagedNonce = myStaged
+            .map((tx) => int.parse(tx['nonce'].toString()))
+            .reduce((cur, next) => cur > next ? cur : next);
+        if (maxStagedNonce >= currentNonce) {
+          currentNonce = maxStagedNonce;
+        }
+      }
     }
 
     final txNonce = currentNonce + 1;
@@ -335,7 +506,7 @@ class WalletController extends ChangeNotifier {
       "timestamp": (DateTime.now().millisecondsSinceEpoch / 1000).toDouble(),
       "op_type": "standard",
     };
-    
+
     if (msg != null && msg.isNotEmpty) {
       payload["message"] = msg;
     }
@@ -357,7 +528,8 @@ class WalletController extends ChangeNotifier {
     }).toList();
 
     if (filtered.isEmpty) return [RpcResponse(0, "No valid recipients", null)];
-    if (filtered.length > 5) return [RpcResponse(0, "Bulk send supports up to 5 recipients", null)];
+    if (filtered.length > 5)
+      return [RpcResponse(0, "Bulk send supports up to 5 recipients", null)];
 
     await refresh();
     final startNonce = await _nextNonce(wallet);
@@ -425,7 +597,8 @@ class WalletController extends ChangeNotifier {
     return loaded;
   }
 
-  Future<Map<String, dynamic>?> importCustomToken(String contractAddress) async {
+  Future<Map<String, dynamic>?> importCustomToken(
+      String contractAddress) async {
     final wallet = currentWallet;
     final address = contractAddress.trim();
     if (wallet == null || address.isEmpty) return null;
@@ -536,10 +709,10 @@ class WalletController extends ChangeNotifier {
     if (currentWallet == null) return RpcResponse(0, "No wallet", null);
     final wallet = currentWallet!;
     await refresh();
-    
+
     final currentRaw = encryptedRaw;
     final amountRaw = (amount * 1000000).toInt();
-    
+
     if (currentRaw < amountRaw) {
       return RpcResponse(0, "Insufficient encrypted balance", null);
     }
@@ -577,7 +750,7 @@ class WalletController extends ChangeNotifier {
     await refresh();
     return res;
   }
-  
+
   /// CREATE PRIVATE TRANSFER
   Future<RpcResponse> makePrivateTransfer(String toAddr, double amount) async {
     if (currentWallet == null) return RpcResponse(0, "No wallet", null);
@@ -629,9 +802,10 @@ class WalletController extends ChangeNotifier {
     await refresh();
     return res;
   }
-  
+
   /// CLAIM PRIVATE TRANSFER
-  Future<bool> claimTransfer(String transferId, String ephPubKey, String encryptedAmount) async {
+  Future<bool> claimTransfer(
+      String transferId, String ephPubKey, String encryptedAmount) async {
     final claims = await scanStealthTransfers();
     final claim = claims.firstWhere(
       (item) => item['id'].toString() == transferId,
@@ -668,7 +842,9 @@ class WalletController extends ChangeNotifier {
 
     final amountRaw = int.tryParse(claim['amount_raw']?.toString() ?? '0') ?? 0;
     final claimSecret = claim['claim_secret']?.toString() ?? '';
-    final blinding = claim['blinding_b64']?.toString() ?? claim['blinding']?.toString() ?? '';
+    final blinding = claim['blinding_b64']?.toString() ??
+        claim['blinding']?.toString() ??
+        '';
     if (amountRaw <= 0 || claimSecret.isEmpty || blinding.isEmpty) {
       return RpcResponse(0, "Invalid claim payload", null);
     }
@@ -713,7 +889,9 @@ class WalletController extends ChangeNotifier {
     final remote = await rpc.getPvacPubkeyRpc(wallet.address);
     final remotePvacPubkey = remote?['pvac_pubkey']?.toString();
     if (remotePvacPubkey == localPvacPubkey) return true;
-    if (remotePvacPubkey != null && remotePvacPubkey.isNotEmpty && remotePvacPubkey != 'null') {
+    if (remotePvacPubkey != null &&
+        remotePvacPubkey.isNotEmpty &&
+        remotePvacPubkey != 'null') {
       print("PVAC key conflict for ${wallet.address}");
       return false;
     }
@@ -745,13 +923,17 @@ class WalletController extends ChangeNotifier {
     try {
       final decoded = jsonDecode(raw);
       if (decoded is List) {
-        return decoded.map((item) => item.toString()).where((item) => item.isNotEmpty).toList();
+        return decoded
+            .map((item) => item.toString())
+            .where((item) => item.isNotEmpty)
+            .toList();
       }
     } catch (_) {}
     return [];
   }
 
-  Future<Map<String, dynamic>?> _loadToken(String address, String walletAddress) async {
+  Future<Map<String, dynamic>?> _loadToken(
+      String address, String walletAddress) async {
     try {
       final symbolValue = await rpc.contractStorageRpc(address, 'symbol');
       final symbol = symbolValue?.toString() ?? '';
@@ -770,7 +952,9 @@ class WalletController extends ChangeNotifier {
       return {
         'address': address,
         'symbol': symbol.length > 10 ? symbol.substring(0, 10) : symbol,
-        'name': (nameValue?.toString().isNotEmpty ?? false) ? nameValue.toString() : symbol,
+        'name': (nameValue?.toString().isNotEmpty ?? false)
+            ? nameValue.toString()
+            : symbol,
         'decimals': decimalsValue?.toString() ?? '0',
         'total_supply': supplyValue?.toString() ?? '0',
         'balance': balance?.toString() ?? '0',
@@ -788,7 +972,8 @@ class WalletController extends ChangeNotifier {
     if (parts.length > 2) return null;
 
     final whole = parts[0].replaceAll(RegExp(r'[^0-9]'), '');
-    var fraction = parts.length == 2 ? parts[1].replaceAll(RegExp(r'[^0-9]'), '') : '';
+    var fraction =
+        parts.length == 2 ? parts[1].replaceAll(RegExp(r'[^0-9]'), '') : '';
     if (whole.isEmpty && fraction.isEmpty) return null;
     if (fraction.length > decimals) {
       fraction = fraction.substring(0, decimals);
@@ -797,7 +982,8 @@ class WalletController extends ChangeNotifier {
       fraction += '0';
     }
 
-    final raw = '${whole.isEmpty ? '0' : whole}$fraction'.replaceFirst(RegExp(r'^0+'), '');
+    final raw = '${whole.isEmpty ? '0' : whole}$fraction'
+        .replaceFirst(RegExp(r'^0+'), '');
     return raw.isEmpty ? '0' : raw;
   }
 
@@ -819,7 +1005,9 @@ class WalletController extends ChangeNotifier {
         signature,
         publicKeyBase64,
       );
-      final cipher = result?['cipher']?.toString() ?? result?['encrypted_balance']?.toString() ?? '0';
+      final cipher = result?['cipher']?.toString() ??
+          result?['encrypted_balance']?.toString() ??
+          '0';
       if (cipher.isEmpty || cipher == '0') return;
 
       final decrypted = await pvac.fheDecrypt(
@@ -897,7 +1085,8 @@ class WalletController extends ChangeNotifier {
     final staging = await rpc.getStaging();
     final staged = staging['staged_transactions'] ?? staging['transactions'];
     if (staged is List) {
-      final myStaged = staged.where((tx) => tx is Map && tx['from'] == wallet.address);
+      final myStaged =
+          staged.where((tx) => tx is Map && tx['from'] == wallet.address);
       if (myStaged.isNotEmpty) {
         final maxStagedNonce = myStaged
             .map((tx) => int.tryParse((tx as Map)['nonce'].toString()) ?? 0)
@@ -912,7 +1101,8 @@ class WalletController extends ChangeNotifier {
     Wallet wallet,
     Map<String, dynamic> payload,
   ) async {
-    final signature = await _signMessageBase64(wallet, _canonicalTxJson(payload));
+    final signature =
+        await _signMessageBase64(wallet, _canonicalTxJson(payload));
     final publicKeyBase64 = await _walletPublicKeyBase64(wallet);
     final signed = Map<String, dynamic>.from(payload);
     signed["signature"] = signature;
@@ -928,7 +1118,8 @@ class WalletController extends ChangeNotifier {
     buffer.write(',"nonce":${tx["nonce"]}');
     buffer.write(',"ou":${jsonEncode(tx["ou"].toString())}');
     buffer.write(',"timestamp":${jsonEncode(tx["timestamp"])}');
-    buffer.write(',"op_type":${jsonEncode((tx["op_type"] ?? "standard").toString())}');
+    buffer.write(
+        ',"op_type":${jsonEncode((tx["op_type"] ?? "standard").toString())}');
     final encryptedData = tx["encrypted_data"]?.toString() ?? '';
     if (encryptedData.isNotEmpty) {
       buffer.write(',"encrypted_data":${jsonEncode(encryptedData)}');
@@ -962,13 +1153,14 @@ class WalletController extends ChangeNotifier {
 Future<Map<String, String>> _generateWalletWorker(dynamic _) async {
   final mnemonic = bip39.generateMnemonic();
   final seed = bip39.mnemonicToSeed(mnemonic);
-  final privateKeyBytes = await crypto_utils.deriveForNetwork(Uint8List.fromList(seed));
-  
+  final privateKeyBytes =
+      await crypto_utils.deriveForNetwork(Uint8List.fromList(seed));
+
   final algorithm = Ed25519();
   final keyPair = await algorithm.newKeyPairFromSeed(privateKeyBytes);
   final pubKey = await keyPair.extractPublicKey();
   final addr = await octraAddressFromPubKey(Uint8List.fromList(pubKey.bytes));
-  
+
   return {
     'mnemonic': mnemonic,
     'address': addr,

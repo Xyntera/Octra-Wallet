@@ -21,9 +21,13 @@ class RpcClient {
       final body = data != null ? jsonEncode(data) : null;
 
       if (method.toUpperCase() == 'POST') {
-        response = await _client.post(url, headers: headers, body: body).timeout(Duration(seconds: kTimeoutSeconds));
+        response = await _client
+            .post(url, headers: headers, body: body)
+            .timeout(Duration(seconds: kTimeoutSeconds));
       } else {
-        response = await _client.get(url, headers: headers).timeout(Duration(seconds: kTimeoutSeconds));
+        response = await _client
+            .get(url, headers: headers)
+            .timeout(Duration(seconds: kTimeoutSeconds));
       }
 
       dynamic jsonBody;
@@ -42,21 +46,26 @@ class RpcClient {
   }
 
   /// Private Request (Authentication via Header)
-  Future<RpcResponse> reqPrivate(String path, String privateKey, {String method = 'GET', dynamic data}) async {
+  Future<RpcResponse> reqPrivate(String path, String privateKey,
+      {String method = 'GET', dynamic data}) async {
     final url = Uri.parse('$baseUrl$path');
     try {
       final headers = {
         'Content-Type': 'application/json',
         'X-Private-Key': privateKey,
       };
-      
+
       http.Response response;
       final body = data != null ? jsonEncode(data) : null;
 
       if (method.toUpperCase() == 'POST') {
-        response = await _client.post(url, headers: headers, body: body).timeout(Duration(seconds: kTimeoutSeconds));
+        response = await _client
+            .post(url, headers: headers, body: body)
+            .timeout(Duration(seconds: kTimeoutSeconds));
       } else {
-        response = await _client.get(url, headers: headers).timeout(Duration(seconds: kTimeoutSeconds));
+        response = await _client
+            .get(url, headers: headers)
+            .timeout(Duration(seconds: kTimeoutSeconds));
       }
 
       dynamic jsonBody;
@@ -98,7 +107,8 @@ class RpcClient {
 
       dynamic jsonBody;
       try {
-        jsonBody = response.body.trim().isEmpty ? null : jsonDecode(response.body);
+        jsonBody =
+            response.body.trim().isEmpty ? null : jsonDecode(response.body);
       } catch (_) {
         jsonBody = null;
       }
@@ -138,10 +148,10 @@ class RpcClient {
     // Mirrors cli.py st() logic
     // 1. Try /balance/{addr}
     final res = await req('GET', '/balance/$address');
-    
+
     double balance = 0.0;
     int nonce = 0;
-    
+
     if (res.statusCode == 200) {
       if (res.json != null) {
         balance = double.tryParse(res.json['balance'].toString()) ?? 0.0;
@@ -150,16 +160,16 @@ class RpcClient {
         // Handle "100.000000 5" format
         final parts = res.text.trim().split(RegExp(r'\s+'));
         if (parts.length >= 2) {
-           balance = double.tryParse(parts[0]) ?? 0.0;
-           nonce = int.tryParse(parts[1]) ?? 0;
+          balance = double.tryParse(parts[0]) ?? 0.0;
+          nonce = int.tryParse(parts[1]) ?? 0;
         }
       }
     } else if (res.statusCode == 404) {
-       // New account
-       balance = 0.0;
-       nonce = 0;
+      // New account
+      balance = 0.0;
+      nonce = 0;
     }
-    
+
     return {"balance": balance, "nonce": nonce};
   }
 
@@ -183,6 +193,22 @@ class RpcClient {
     return null;
   }
 
+  Future<Map<String, dynamic>?> getTransactionsByAddress(
+    String address, {
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final rpcRes = await rpcCall(
+      'octra_transactionsByAddress',
+      [address, limit, offset],
+      timeoutSeconds: 20,
+    );
+    final rpcBody = rpcResult(rpcRes);
+    if (rpcBody is Map<String, dynamic>) return rpcBody;
+    if (rpcBody is Map) return Map<String, dynamic>.from(rpcBody);
+    return null;
+  }
+
   Future<String?> getPublicKey(String address) async {
     final rpcRes = await rpcCall('octra_publicKey', [address]);
     final rpcBody = rpcResult(rpcRes);
@@ -198,8 +224,10 @@ class RpcClient {
     return null;
   }
 
-  Future<Map<String, dynamic>?> getEncryptedBalance(String address, String privateKey) async {
-    final res = await reqPrivate('/view_encrypted_balance/$address', privateKey);
+  Future<Map<String, dynamic>?> getEncryptedBalance(
+      String address, String privateKey) async {
+    final res =
+        await reqPrivate('/view_encrypted_balance/$address', privateKey);
     if (res.statusCode == 200) {
       return res.json;
     }
@@ -223,7 +251,8 @@ class RpcClient {
   }
 
   Future<Map<String, dynamic>?> getEncryptedCipherRpc(String address) async {
-    final res = await rpcCall('octra_encryptedCipher', [address], timeoutSeconds: 30);
+    final res =
+        await rpcCall('octra_encryptedCipher', [address], timeoutSeconds: 30);
     final body = rpcResult(res);
     if (body is Map<String, dynamic>) return body;
     if (body is Map) return Map<String, dynamic>.from(body);
@@ -231,7 +260,8 @@ class RpcClient {
   }
 
   Future<Map<String, dynamic>?> getPvacPubkeyRpc(String address) async {
-    final res = await rpcCall('octra_pvacPubkey', [address], timeoutSeconds: 30);
+    final res =
+        await rpcCall('octra_pvacPubkey', [address], timeoutSeconds: 30);
     final body = rpcResult(res);
     if (body is Map<String, dynamic>) return body;
     if (body is Map) return Map<String, dynamic>.from(body);
@@ -239,7 +269,8 @@ class RpcClient {
   }
 
   Future<List<dynamic>> getStealthOutputsRpc({int fromEpoch = 0}) async {
-    final res = await rpcCall('octra_stealthOutputs', [fromEpoch], timeoutSeconds: 30);
+    final res =
+        await rpcCall('octra_stealthOutputs', [fromEpoch], timeoutSeconds: 30);
     final body = rpcResult(res);
     if (body is Map && body['outputs'] is List) return body['outputs'] as List;
     if (body is List) return body;
@@ -269,16 +300,26 @@ class RpcClient {
   Future<List<dynamic>> listContractsRpc() async {
     final res = await rpcCall('octra_listContracts', [], timeoutSeconds: 15);
     final body = rpcResult(res);
-    if (body is Map && body['contracts'] is List) return body['contracts'] as List;
+    if (body is Map && body['contracts'] is List)
+      return body['contracts'] as List;
     if (body is List) return body;
     return const [];
   }
 
   Future<dynamic> contractStorageRpc(String address, String key) async {
-    final res = await rpcCall('octra_contractStorage', [address, key], timeoutSeconds: 15);
+    final res = await rpcCall('octra_contractStorage', [address, key],
+        timeoutSeconds: 15);
     final body = rpcResult(res);
     if (body is Map && body.containsKey('value')) return body['value'];
     return null;
+  }
+
+  Future<dynamic> programStorageRpc(String address, String key) async {
+    final res = await rpcCall('octra_programStorage', [address, key],
+        timeoutSeconds: 15);
+    final body = rpcResult(res);
+    if (body is Map && body.containsKey('value')) return body['value'];
+    return body;
   }
 
   Future<dynamic> contractCallViewRpc(
@@ -297,7 +338,8 @@ class RpcClient {
     return body;
   }
 
-  Future<RpcResponse> encryptBalance(String address, double amount, String privateKey, String encryptedData) async {
+  Future<RpcResponse> encryptBalance(String address, double amount,
+      String privateKey, String encryptedData) async {
     final data = {
       "address": address,
       "amount": (amount * kMicro).toInt().toString(),
@@ -307,8 +349,9 @@ class RpcClient {
     return await req('POST', '/encrypt_balance', data: data);
   }
 
-  Future<RpcResponse> decryptBalance(String address, double amount, String privateKey, String encryptedData) async {
-     final data = {
+  Future<RpcResponse> decryptBalance(String address, double amount,
+      String privateKey, String encryptedData) async {
+    final data = {
       "address": address,
       "amount": (amount * kMicro).toInt().toString(),
       "private_key": privateKey,
@@ -317,7 +360,8 @@ class RpcClient {
     return await req('POST', '/decrypt_balance', data: data);
   }
 
-  Future<RpcResponse> createPrivateTransfer(String fromAddr, String toAddr, double amount, String fromPrivKey, String toPubKey) async {
+  Future<RpcResponse> createPrivateTransfer(String fromAddr, String toAddr,
+      double amount, String fromPrivKey, String toPubKey) async {
     final data = {
       "from": fromAddr,
       "to": toAddr,
@@ -328,15 +372,18 @@ class RpcClient {
     return await req('POST', '/private_transfer', data: data);
   }
 
-  Future<List<dynamic>> getPendingPrivateTransfers(String address, String privateKey) async {
-    final res = await reqPrivate('/pending_private_transfers?address=$address', privateKey);
+  Future<List<dynamic>> getPendingPrivateTransfers(
+      String address, String privateKey) async {
+    final res = await reqPrivate(
+        '/pending_private_transfers?address=$address', privateKey);
     if (res.statusCode == 200 && res.json != null) {
       return res.json['pending_transfers'] ?? [];
     }
     return [];
   }
 
-  Future<RpcResponse> claimPrivateTransfer(String address, String privateKey, String transferId) async {
+  Future<RpcResponse> claimPrivateTransfer(
+      String address, String privateKey, String transferId) async {
     final data = {
       "recipient_address": address,
       "private_key": privateKey,
@@ -362,9 +409,10 @@ class RpcClient {
     final res = await req('GET', '/staging?t=5'); // timeout 5s matches cli
     return res.json ?? {};
   }
-  
+
   Future<RpcResponse> getTx(String hash) async {
-    final rpcRes = await rpcCall('octra_transaction', [hash], timeoutSeconds: 30);
+    final rpcRes =
+        await rpcCall('octra_transaction', [hash], timeoutSeconds: 30);
     if (rpcRes.statusCode == 200 && rpcError(rpcRes) == null) {
       return rpcRes;
     }

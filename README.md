@@ -66,7 +66,7 @@ GitHub Actions setup is documented in
 [`docs/github-actions-build.md`](docs/github-actions-build.md).
 
 Release notes are tracked in
-[`docs/release-notes-v1.0.0.md`](docs/release-notes-v1.0.0.md).
+[`docs/release-notes-v1.0.1.md`](docs/release-notes-v1.0.1.md).
 
 ## 📥 Download
 
@@ -116,11 +116,28 @@ Get the latest production APK from the
 * **State Management**: `Provider`
 * **UI**: Cupertino (iOS-style) & Material
 
+## Open Source
+
+Octra Wallet is open source under GPL-2.0-or-later with an OpenSSL linking
+permission. The repository includes vendored Octra `webcli` PVAC components with
+their upstream notices preserved.
+
+- License: [`LICENSE`](LICENSE)
+- Notices: [`NOTICE.md`](NOTICE.md)
+- Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Security: [`SECURITY.md`](SECURITY.md)
+- Code of Conduct: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+- Governance: [`GOVERNANCE.md`](GOVERNANCE.md)
+
 ## 🤝 Contributing
-Contributions are welcome! Please open an issue or submit a pull request.
+
+Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md)
+before opening a pull request.
 
 ## 📄 License
-MIT License. See [LICENSE](LICENSE) for details.
+
+GPL-2.0-or-later with an OpenSSL linking permission. See [`LICENSE`](LICENSE)
+for details.
 
 ---
 <div align="center">

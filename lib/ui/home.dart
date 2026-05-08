@@ -1,6 +1,15 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart'
-    show Alignment, Colors, Divider, Gradient, Icons, LinearGradient;
+    show
+        Alignment,
+        Border,
+        BorderRadius,
+        BoxDecoration,
+        Colors,
+        Divider,
+        Gradient,
+        Icons,
+        LinearGradient;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -106,31 +115,91 @@ class HomeTabScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoTabScaffold(
-      tabBar: CupertinoTabBar(
-        backgroundColor: const Color(0xCC1C1C1E),
-        activeColor: CupertinoColors.systemBlue,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(CupertinoIcons.home),
-            label: 'Home',
+    return Stack(
+      children: [
+        CupertinoTabScaffold(
+          tabBar: CupertinoTabBar(
+            backgroundColor: const Color(0xCC1C1C1E),
+            activeColor: CupertinoColors.systemBlue,
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(CupertinoIcons.home),
+                label: 'Home',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(CupertinoIcons.time),
+                label: 'History',
+              ),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(CupertinoIcons.time),
-            label: 'History',
+          tabBuilder: (context, index) {
+            switch (index) {
+              case 0:
+                return const DashboardTab();
+              case 1:
+                return const HistoryTab();
+              default:
+                return const DashboardTab();
+            }
+          },
+        ),
+        const _PvacBusyOverlay(),
+      ],
+    );
+  }
+}
+
+class _PvacBusyOverlay extends StatelessWidget {
+  const _PvacBusyOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    final wallet = context.watch<WalletController>();
+    if (!wallet.isPvacBusy) return const SizedBox.shrink();
+
+    return Positioned.fill(
+      child: ColoredBox(
+        color: const Color(0xB3000000),
+        child: SafeArea(
+          child: Center(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1C1C1E),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CupertinoActivityIndicator(radius: 16),
+                  const SizedBox(height: 16),
+                  Text(
+                    wallet.pvacStatus ?? 'Running PVAC operation',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Keep the app open. Crypto proofs are running in a background worker.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ],
+        ),
       ),
-      tabBuilder: (context, index) {
-        switch (index) {
-          case 0:
-            return const DashboardTab();
-          case 1:
-            return const HistoryTab();
-          default:
-            return const DashboardTab();
-        }
-      },
     );
   }
 }

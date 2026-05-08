@@ -9,7 +9,7 @@ import 'package:flutter/foundation.dart';
 
 import 'address.dart';
 import 'native/octra_core_bridge.dart';
-import 'native/pvac_operations.dart';
+import 'native/pvac_worker.dart';
 import 'rpc.dart';
 import 'models.dart';
 import 'utils/derivation.dart' as crypto_utils;
@@ -51,7 +51,7 @@ class WalletController extends ChangeNotifier {
 
   RpcClient rpc = RpcClient();
   final OctraCoreBridge nativeCore = createOctraCoreBridge();
-  late final PvacOperations pvac = PvacOperations(nativeCore);
+  final PvacWorker pvacWorker = PvacWorker();
 
   // State
   double publicBalance = 0.0;
@@ -72,6 +72,8 @@ class WalletController extends ChangeNotifier {
   DateTime? _feeCacheAt;
   int _refreshSerial = 0;
   bool isLoading = false;
+  bool isPvacBusy = false;
+  String? pvacStatus;
 
   bool get hasWallet => currentWallet != null;
 
@@ -704,6 +706,27 @@ class WalletController extends ChangeNotifier {
     return null;
   }
 
+  Future<T> _runPvacTask<T>(
+    String status,
+    Future<T> Function() task, {
+    bool showProgress = true,
+  }) async {
+    if (showProgress) {
+      isPvacBusy = true;
+      pvacStatus = status;
+      notifyListeners();
+    }
+    try {
+      return await task();
+    } finally {
+      if (showProgress) {
+        isPvacBusy = false;
+        pvacStatus = null;
+        notifyListeners();
+      }
+    }
+  }
+
   /// SEND TRANSACTION
   Future<RpcResponse> sendTransaction(
       String to, double amount, String? msg) async {
@@ -926,9 +949,12 @@ class WalletController extends ChangeNotifier {
       return RpcResponse(0, "PVAC registration failed", null);
     }
 
-    final pvacResult = await pvac.encryptBalance(
-      privateKeyBase64: wallet.privateKeyBase64,
-      amountRaw: amountRaw,
+    final pvacResult = await _runPvacTask(
+      'Preparing encrypt proof',
+      () => pvacWorker.encryptBalance(
+        privateKeyBase64: wallet.privateKeyBase64,
+        amountRaw: amountRaw,
+      ),
     );
 
     final encryptedData = jsonEncode(pvacResult['encrypted_data']);
@@ -971,11 +997,14 @@ class WalletController extends ChangeNotifier {
       return RpcResponse(0, "PVAC registration failed", null);
     }
 
-    final pvacResult = await pvac.decryptBalance(
-      privateKeyBase64: wallet.privateKeyBase64,
-      amountRaw: amountRaw,
-      currentCipher: cipher,
-      currentBalanceRaw: currentRaw,
+    final pvacResult = await _runPvacTask(
+      'Preparing decrypt proof',
+      () => pvacWorker.decryptBalance(
+        privateKeyBase64: wallet.privateKeyBase64,
+        amountRaw: amountRaw,
+        currentCipher: cipher,
+        currentBalanceRaw: currentRaw,
+      ),
     );
 
     final encryptedData = jsonEncode(pvacResult['encrypted_data']);
@@ -1022,13 +1051,16 @@ class WalletController extends ChangeNotifier {
       return RpcResponse(0, "PVAC registration failed", null);
     }
 
-    final stealth = await pvac.stealthPrepareSend(
-      privateKeyBase64: wallet.privateKeyBase64,
-      recipientAddress: toAddr,
-      recipientPublicKeyBase64: toPubKey,
-      amountRaw: amountRaw,
-      currentCipher: cipher,
-      currentBalanceRaw: encryptedRaw,
+    final stealth = await _runPvacTask(
+      'Preparing stealth transfer',
+      () => pvacWorker.stealthPrepareSend(
+        privateKeyBase64: wallet.privateKeyBase64,
+        recipientAddress: toAddr,
+        recipientPublicKeyBase64: toPubKey,
+        amountRaw: amountRaw,
+        currentCipher: cipher,
+        currentBalanceRaw: encryptedRaw,
+      ),
     );
 
     final tx = await _buildPrivacyTx(
@@ -1062,9 +1094,12 @@ class WalletController extends ChangeNotifier {
     if (wallet == null || !nativeCore.isAvailable) return const [];
 
     final outputs = await rpc.getStealthOutputsRpc();
-    final result = await pvac.stealthScanOutputs(
-      privateKeyBase64: wallet.privateKeyBase64,
-      outputs: outputs,
+    final result = await _runPvacTask(
+      'Scanning stealth outputs',
+      () => pvacWorker.stealthScanOutputs(
+        privateKeyBase64: wallet.privateKeyBase64,
+        outputs: outputs,
+      ),
     );
     final claims = result['claims'];
     if (claims is! List) return const [];
@@ -1095,12 +1130,15 @@ class WalletController extends ChangeNotifier {
       return RpcResponse(0, "PVAC registration failed", null);
     }
 
-    final prepared = await pvac.stealthPrepareClaim(
-      privateKeyBase64: wallet.privateKeyBase64,
-      outputId: claim['id'],
-      amountRaw: amountRaw,
-      claimSecret: claimSecret,
-      blindingBase64: blinding,
+    final prepared = await _runPvacTask(
+      'Preparing claim proof',
+      () => pvacWorker.stealthPrepareClaim(
+        privateKeyBase64: wallet.privateKeyBase64,
+        outputId: claim['id'],
+        amountRaw: amountRaw,
+        claimSecret: claimSecret,
+        blindingBase64: blinding,
+      ),
     );
 
     final tx = await _buildPrivacyTx(
@@ -1123,7 +1161,7 @@ class WalletController extends ChangeNotifier {
     _pvacRegistrationInFlight.add(wallet.address);
     Future.delayed(const Duration(milliseconds: 350), () async {
       try {
-        await ensurePvacRegistered(wallet: wallet);
+        await ensurePvacRegistered(wallet: wallet, showProgress: false);
       } catch (e) {
         print("Background PVAC registration failed for ${wallet.address}: $e");
       } finally {
@@ -1132,12 +1170,20 @@ class WalletController extends ChangeNotifier {
     });
   }
 
-  Future<bool> ensurePvacRegistered({Wallet? wallet}) async {
+  Future<bool> ensurePvacRegistered({
+    Wallet? wallet,
+    bool showProgress = true,
+  }) async {
     wallet ??= currentWallet;
     if (wallet == null || !nativeCore.isAvailable) return false;
+    final activeWallet = wallet;
 
-    final registration = await pvac.registerPubkey(
-      privateKeyBase64: wallet.privateKeyBase64,
+    final registration = await _runPvacTask(
+      'Registering PVAC key',
+      () => pvacWorker.registerPubkey(
+        privateKeyBase64: activeWallet.privateKeyBase64,
+      ),
+      showProgress: showProgress,
     );
     final localPvacPubkey = registration['pubkey_b64']?.toString();
     final aesKatHex = registration['aes_kat_hex']?.toString() ?? '';
@@ -1269,7 +1315,7 @@ class WalletController extends ChangeNotifier {
           '0';
       if (cipher.isEmpty || cipher == '0') return;
 
-      final decrypted = await pvac.fheDecrypt(
+      final decrypted = await pvacWorker.fheDecrypt(
         privateKeyBase64: wallet.privateKeyBase64,
         cipher: cipher,
       );

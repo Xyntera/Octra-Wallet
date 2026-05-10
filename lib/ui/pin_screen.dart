@@ -20,6 +20,7 @@ class PinScreen extends StatefulWidget {
 class _PinScreenState extends State<PinScreen> {
   String _pin = "";
   final int _pinLength = 4;
+  UniqueKey _shakeKey = UniqueKey();
   final LocalAuthentication auth = LocalAuthentication();
   bool _canCheckBiometrics = false;
   
@@ -88,6 +89,7 @@ class _PinScreenState extends State<PinScreen> {
           HapticFeedback.heavyImpact();
           setState(() {
             _pin = "";
+            _shakeKey = UniqueKey();
           });
        }
     }
@@ -118,12 +120,12 @@ class _PinScreenState extends State<PinScreen> {
                   height: 16,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: index < _pin.length ? CupertinoColors.systemBlue : CupertinoColors.systemGrey.withOpacity(0.3),
-                    boxShadow: index < _pin.length ? [BoxShadow(color: CupertinoColors.systemBlue.withOpacity(0.5), blurRadius: 10)] : null,
+                    color: index < _pin.length ? CupertinoColors.systemBlue : CupertinoColors.systemGrey.withValues(alpha: 0.3),
+                    boxShadow: index < _pin.length ? [BoxShadow(color: CupertinoColors.systemBlue.withValues(alpha: 0.5), blurRadius: 10)] : null,
                   ),
                 );
               }),
-            ),
+            ).animate(key: _shakeKey).shake(duration: 400.ms, hz: 4, offset: const Offset(6, 0)),
             const Spacer(),
             // Numpad
             _buildNumpad(),
@@ -236,10 +238,9 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
   Widget build(BuildContext context) {
     final wallet = context.watch<WalletController>();
     
-    return FutureBuilder<bool>(
-      future: wallet.isSecurityEnabled,
-      builder: (context, snapshot) {
-        final isEnabled = snapshot.data ?? false;
+    final isEnabled = wallet.securityEnabledSync;
+    return Builder(
+      builder: (context) {
         
         return CupertinoPageScaffold(
           backgroundColor: Colors.black,

@@ -62,7 +62,6 @@ Future<bool> _confirmFeeAndSecurity(
         children: [
           if (amountLabel != null) Text('Amount: $amountLabel'),
           Text('Network fee: ${wallet.formatFeeRaw(feeRaw)}'),
-          Text('Fee raw: $feeRaw ou'),
           if (totalLabel != null) Text('Total public cost: $totalLabel'),
         ],
       ),
@@ -155,46 +154,51 @@ class _PvacBusyOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final wallet = context.watch<WalletController>();
-    if (!wallet.isPvacBusy) return const SizedBox.shrink();
-
-    return Positioned.fill(
-      child: ColoredBox(
-        color: const Color(0xB3000000),
-        child: SafeArea(
-          child: Center(
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 32),
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1C1C1E),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CupertinoActivityIndicator(radius: 16),
-                  const SizedBox(height: 16),
-                  Text(
-                    wallet.pvacStatus ?? 'Running PVAC operation',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.outfit(
-                      color: Colors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                    ),
+    return AnimatedOpacity(
+      opacity: wallet.isPvacBusy ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 220),
+      child: IgnorePointer(
+        ignoring: !wallet.isPvacBusy,
+        child: Positioned.fill(
+          child: ColoredBox(
+            color: const Color(0xB3000000),
+            child: SafeArea(
+              child: Center(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 32),
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1C1C1E),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white12),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Keep the app open. Crypto proofs are running in a background worker.',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.outfit(
-                      color: Colors.white70,
-                      fontSize: 13,
-                      height: 1.35,
-                    ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CupertinoActivityIndicator(radius: 16),
+                      const SizedBox(height: 16),
+                      Text(
+                        wallet.pvacStatus ?? 'Running PVAC operation',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.outfit(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Keep the app open. Crypto proofs are running in a background worker.',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.outfit(
+                          color: Colors.white70,
+                          fontSize: 13,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -269,7 +273,7 @@ class _DashboardTabState extends State<DashboardTab> {
                       end: Alignment.bottomRight,
                     ),
                     icon: CupertinoIcons.globe,
-                  ).animate().scale(delay: 100.ms),
+                  ).animate(key: ValueKey('pub-${wallet.address}')).scale(delay: 100.ms),
                   const SizedBox(height: 12),
                   _buildBalanceCard(
                     title: 'Private Balance',
@@ -280,7 +284,7 @@ class _DashboardTabState extends State<DashboardTab> {
                       end: Alignment.bottomRight,
                     ),
                     icon: CupertinoIcons.lock_shield,
-                  ).animate().scale(delay: 140.ms),
+                  ).animate(key: ValueKey('priv-${wallet.address}')).scale(delay: 140.ms),
                   const SizedBox(height: 12),
                   Text(
                     walletCtrl.nativeCore.isAvailable
@@ -401,7 +405,7 @@ class _DashboardTabState extends State<DashboardTab> {
           ),
           const SizedBox(height: 16),
           Text(
-            '${balance.toStringAsFixed(6)} OCT',
+            '${balance.toStringAsFixed(6).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '.00')} OCT',
             style: GoogleFonts.outfit(
               color: Colors.white,
               fontSize: 32,
@@ -1136,16 +1140,15 @@ class _DashboardTabState extends State<DashboardTab> {
                                         ? 'Submitted: ${result['tx_hash']}'
                                         : res.text);
                                 if (parentContext.mounted)
-                                  _showResultDialog(parentContext, msg);
+                                  _showResultDialog(parentContext, msg, isError: err != null);
                               } catch (e) {
                                 if (context.mounted) Navigator.pop(context);
                                 if (parentContext.mounted)
-                                  _showResultDialog(
-                                      parentContext, e.toString());
+                                  _showResultDialog(parentContext, e.toString());
                               }
                             },
                       child: isSubmitting
-                          ? const CupertinoActivityIndicator()
+                          ? const CupertinoActivityIndicator(color: CupertinoColors.white)
                           : Text(encrypt ? 'Encrypt' : 'Decrypt'),
                     ),
                   ],
@@ -1269,7 +1272,7 @@ class _DashboardTabState extends State<DashboardTab> {
                                     ? 'Submitted: ${result['tx_hash']}'
                                     : res.text;
                                 if (parentContext.mounted)
-                                  _showResultDialog(parentContext, msg);
+                                  _showResultDialog(parentContext, msg, isError: false);
                               } catch (e) {
                                 // PVAC or other exception: keep sheet open so user can retry
                                 if (!context.mounted) return;
@@ -1446,7 +1449,7 @@ class _DashboardTabState extends State<DashboardTab> {
                                   ? 'Submitted $okCount transaction(s)'
                                   : 'Submitted $okCount transaction(s), then failed: $firstError';
                               if (parentContext.mounted)
-                                _showResultDialog(parentContext, msg);
+                                _showResultDialog(parentContext, msg, isError: firstError != null);
                             } catch (e) {
                               if (context.mounted) Navigator.pop(context);
                               if (parentContext.mounted)
@@ -1454,7 +1457,7 @@ class _DashboardTabState extends State<DashboardTab> {
                             }
                           },
                     child: isSubmitting
-                        ? const CupertinoActivityIndicator()
+                        ? const CupertinoActivityIndicator(color: CupertinoColors.white)
                         : const Text('Submit Bulk'),
                   ),
                 ],
@@ -1477,11 +1480,22 @@ class _DashboardTabState extends State<DashboardTab> {
     }
   }
 
-  void _showResultDialog(BuildContext context, String message) {
+  void _showResultDialog(BuildContext context, String message, {bool isError = true}) {
     showCupertinoDialog(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('Octra Wallet'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isError ? CupertinoIcons.xmark_circle_fill : CupertinoIcons.checkmark_circle_fill,
+              color: isError ? CupertinoColors.destructiveRed : CupertinoColors.activeGreen,
+              size: 18,
+            ),
+            const SizedBox(width: 6),
+            Text(isError ? 'Error' : 'Success'),
+          ],
+        ),
         content: Text(message),
         actions: [
           CupertinoDialogAction(
@@ -1521,7 +1535,7 @@ class _DashboardTabState extends State<DashboardTab> {
         (result is Map && result['tx_hash'] != null
             ? 'Submitted: ${result['tx_hash']}'
             : res.text);
-    if (context.mounted) _showResultDialog(context, msg);
+    if (context.mounted) _showResultDialog(context, msg, isError: err != null);
   }
 }
 

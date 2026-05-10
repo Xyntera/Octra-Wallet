@@ -20,6 +20,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../wallet.dart';
 import 'wallet_setup.dart';
 import 'pin_screen.dart';
+import 'portfolio.dart';
 
 const int _octMicro = 1000000;
 
@@ -126,6 +127,10 @@ class HomeTabScaffold extends StatelessWidget {
                 label: 'Home',
               ),
               BottomNavigationBarItem(
+                icon: Icon(CupertinoIcons.chart_bar_alt_fill),
+                label: 'Portfolio',
+              ),
+              BottomNavigationBarItem(
                 icon: Icon(CupertinoIcons.time),
                 label: 'History',
               ),
@@ -136,6 +141,8 @@ class HomeTabScaffold extends StatelessWidget {
               case 0:
                 return const DashboardTab();
               case 1:
+                return const PortfolioTab();
+              case 2:
                 return const HistoryTab();
               default:
                 return const DashboardTab();
@@ -380,7 +387,7 @@ class _DashboardTabState extends State<DashboardTab> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: gradient.colors.first.withOpacity(0.4),
+            color: gradient.colors.first.withValues(alpha: 0.4),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
@@ -423,27 +430,7 @@ class _DashboardTabState extends State<DashboardTab> {
     required String label,
     required VoidCallback onTap,
   }) {
-    return Column(
-      children: [
-        CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: onTap,
-          child: Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: const Color(0xFF1C1C1E),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white10),
-            ),
-            child: Icon(icon, color: Colors.white),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(label,
-            style: GoogleFonts.outfit(color: Colors.white, fontSize: 13)),
-      ],
-    );
+    return _ActionButton(icon: icon, label: label, onTap: onTap);
   }
 
   void _showSideMenu(BuildContext context) {
@@ -507,8 +494,8 @@ class _DashboardTabState extends State<DashboardTab> {
                           gradient: LinearGradient(
                             colors: [
                               Color(walletCtrl.currentWallet!.color)
-                                  .withOpacity(0.26),
-                              Colors.white.withOpacity(0.06),
+                                  .withValues(alpha: 0.26),
+                              Colors.white.withValues(alpha: 0.06),
                             ],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
@@ -516,7 +503,7 @@ class _DashboardTabState extends State<DashboardTab> {
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
                             color: Color(walletCtrl.currentWallet!.color)
-                                .withOpacity(0.35),
+                                .withValues(alpha: 0.35),
                             width: 1,
                           ),
                         ),
@@ -738,7 +725,7 @@ class _DashboardTabState extends State<DashboardTab> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.06),
+        color: Colors.white.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white10),
       ),
@@ -783,7 +770,7 @@ class _DashboardTabState extends State<DashboardTab> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
+          color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -805,25 +792,30 @@ class _DashboardTabState extends State<DashboardTab> {
     final walletCtrl = context.read<WalletController>();
     showCupertinoModalPopup(
       context: context,
-      builder: (context) => Container(
-        height: 500,
-        decoration: const BoxDecoration(
-          color: Color(0xFF1C1C1E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            Text(
-              'Wallets',
-              style: GoogleFonts.outfit(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+      builder: (context) {
+        final walletCount = walletCtrl.wallets.length;
+        final maxHeight = MediaQuery.of(context).size.height * 0.6;
+        final contentHeight = 64.0 + (walletCount + 1) * 64.0;
+        final sheetHeight = contentHeight.clamp(200.0, maxHeight);
+        return Container(
+          height: sheetHeight,
+          decoration: const BoxDecoration(
+            color: Color(0xFF1C1C1E),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 16),
+              Text(
+                'Wallets',
+                style: GoogleFonts.outfit(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
+              const SizedBox(height: 16),
+              Expanded(
               child: ListView.builder(
                 itemCount: walletCtrl.wallets.length + 1,
                 itemBuilder: (ctx, idx) {
@@ -902,7 +894,8 @@ class _DashboardTabState extends State<DashboardTab> {
             ),
           ],
         ),
-      ),
+        );
+      },
     );
   }
 
@@ -1092,7 +1085,7 @@ class _DashboardTabState extends State<DashboardTab> {
                       style: const TextStyle(color: Colors.white),
                       placeholderStyle: const TextStyle(color: Colors.white38),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
+                        color: Colors.white.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: Colors.white10),
                       ),
@@ -1204,7 +1197,7 @@ class _DashboardTabState extends State<DashboardTab> {
                       style: const TextStyle(color: Colors.white),
                       placeholderStyle: const TextStyle(color: Colors.white38),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
+                        color: Colors.white.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: Colors.white10),
                       ),
@@ -1219,7 +1212,7 @@ class _DashboardTabState extends State<DashboardTab> {
                       style: const TextStyle(color: Colors.white),
                       placeholderStyle: const TextStyle(color: Colors.white38),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
+                        color: Colors.white.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: Colors.white10),
                       ),
@@ -1359,7 +1352,7 @@ class _DashboardTabState extends State<DashboardTab> {
                         return Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.06),
+                            color: Colors.white.withValues(alpha: 0.06),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(color: Colors.white10),
                           ),
@@ -1519,7 +1512,7 @@ class _DashboardTabState extends State<DashboardTab> {
       style: const TextStyle(color: Colors.white),
       placeholderStyle: const TextStyle(color: Colors.white38),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.08),
+        color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white10),
       ),
@@ -1690,7 +1683,7 @@ class _StealthClaimsSheetState extends State<_StealthClaimsSheet> {
                             return Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.06),
+                                color: Colors.white.withValues(alpha: 0.06),
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(color: Colors.white10),
                               ),
@@ -1998,7 +1991,7 @@ class _TokensSheetState extends State<_TokensSheet> {
                                 padding: const EdgeInsets.only(right: 20),
                                 decoration: BoxDecoration(
                                   color: CupertinoColors.systemRed
-                                      .withOpacity(0.24),
+                                      .withValues(alpha: 0.24),
                                   borderRadius: BorderRadius.circular(16),
                                 ),
                                 child: const Icon(
@@ -2021,7 +2014,7 @@ class _TokensSheetState extends State<_TokensSheet> {
                               child: Container(
                                 padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.06),
+                                  color: Colors.white.withValues(alpha: 0.06),
                                   borderRadius: BorderRadius.circular(16),
                                   border: Border.all(color: Colors.white10),
                                 ),
@@ -2069,7 +2062,7 @@ class _TokensSheetState extends State<_TokensSheet> {
 
   BoxDecoration _fieldDecoration() {
     return BoxDecoration(
-      color: Colors.white.withOpacity(0.08),
+      color: Colors.white.withValues(alpha: 0.08),
       borderRadius: BorderRadius.circular(14),
       border: Border.all(color: Colors.white10),
     );
@@ -2131,7 +2124,7 @@ Widget _buildTransactionRow(BuildContext context, Map<String, dynamic> tx) {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
+              color: color.withValues(alpha: 0.15),
               shape: BoxShape.circle,
             ),
             child: Icon(
@@ -2336,7 +2329,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -2368,8 +2361,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: isIn
-                    ? Colors.green.withOpacity(0.2)
-                    : Colors.red.withOpacity(0.2),
+                    ? Colors.green.withValues(alpha: 0.2)
+                    : Colors.red.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Row(
@@ -2511,6 +2504,55 @@ class HistoryTab extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _ActionButton extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ActionButton({required this.icon, required this.label, required this.onTap});
+
+  @override
+  State<_ActionButton> createState() => _ActionButtonState();
+}
+
+class _ActionButtonState extends State<_ActionButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.88 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: Column(
+          children: [
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1C1C1E),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Icon(widget.icon, color: Colors.white),
+            ),
+            const SizedBox(height: 8),
+            Text(widget.label,
+                style: GoogleFonts.outfit(color: Colors.white, fontSize: 13)),
+          ],
+        ),
       ),
     );
   }

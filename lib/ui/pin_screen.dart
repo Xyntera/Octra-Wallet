@@ -198,7 +198,7 @@ class _PinScreenState extends State<PinScreen> {
         width: 70,
         height: 70,
         decoration: BoxDecoration(
-          color: CupertinoColors.systemGrey6.withOpacity(0.1),
+          color: CupertinoColors.systemGrey6.withValues(alpha: 0.1),
           shape: BoxShape.circle,
         ),
         child: Center(

@@ -15,6 +15,7 @@ import 'models.dart';
 import 'utils/derivation.dart' as crypto_utils;
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' as http;
 
 class WalletController extends ChangeNotifier {
   final _storage = const FlutterSecureStorage();
@@ -74,6 +75,14 @@ class WalletController extends ChangeNotifier {
   bool isLoading = false;
   bool isPvacBusy = false;
   String? pvacStatus;
+
+  // Portfolio / price data
+  double octPrice = 0.0;
+  double priceChange24h = 0.0;
+  List<List<double>> priceHistory = []; // [[timestamp_ms, usd], ...]
+  Map<String, double> walletPublicBalances = {}; // address -> OCT balance
+  bool isPriceFetching = false;
+  DateTime? _priceFetchedAt;
 
   bool get hasWallet => currentWallet != null;
 
@@ -357,10 +366,8 @@ class WalletController extends ChangeNotifier {
     } catch (e) {
       print("Refresh error: $e");
     } finally {
-      if (_isActiveRefresh(refreshId, wallet)) {
-        isLoading = false;
-        notifyListeners();
-      }
+      isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -1444,6 +1451,90 @@ class WalletController extends ChangeNotifier {
     );
     return base64Encode(signature.bytes);
   }
+
+  // ── Portfolio ────────────────────────────────────────────────────────────
+
+  void invalidatePriceCache() => _priceFetchedAt = null;
+
+  Future<void> fetchPriceData() async {
+    if (isPriceFetching) return;
+    if (_priceFetchedAt != null &&
+        DateTime.now().difference(_priceFetchedAt!) < const Duration(minutes: 5)) return;
+
+    isPriceFetching = true;
+    notifyListeners();
+
+    try {
+      final client = http.Client();
+      try {
+        final priceRes = await client.get(Uri.parse(
+          'https://api.coingecko.com/api/v3/simple/price'
+          '?ids=octra&vs_currencies=usd&include_24hr_change=true',
+        )).timeout(const Duration(seconds: 10));
+
+        if (priceRes.statusCode == 200) {
+          final data = jsonDecode(priceRes.body) as Map?;
+          final octraData = data?['octra'] as Map?;
+          if (octraData != null) {
+            octPrice = (octraData['usd'] as num?)?.toDouble() ?? octPrice;
+            priceChange24h = (octraData['usd_24h_change'] as num?)?.toDouble() ?? priceChange24h;
+          }
+        }
+
+        final chartRes = await client.get(Uri.parse(
+          'https://api.coingecko.com/api/v3/coins/octra/market_chart'
+          '?vs_currency=usd&days=7',
+        )).timeout(const Duration(seconds: 10));
+
+        if (chartRes.statusCode == 200) {
+          final data = jsonDecode(chartRes.body) as Map?;
+          final prices = data?['prices'] as List?;
+          if (prices != null && prices.isNotEmpty) {
+            priceHistory = prices.map<List<double>>((p) {
+              final pair = p as List;
+              return [(pair[0] as num).toDouble(), (pair[1] as num).toDouble()];
+            }).toList();
+          }
+        }
+
+        _priceFetchedAt = DateTime.now();
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      print('Price fetch error: $e');
+    }
+
+    isPriceFetching = false;
+    notifyListeners();
+  }
+
+  Future<void> fetchAllWalletBalances() async {
+    if (wallets.isEmpty) return;
+    try {
+      final results = await Future.wait(
+        wallets.map((w) => rpc.getBalanceAndNonce(w.address)),
+      );
+      for (var i = 0; i < wallets.length; i++) {
+        final bal = results[i]['balance'];
+        if (bal is double) walletPublicBalances[wallets[i].address] = bal;
+      }
+      notifyListeners();
+    } catch (e) {
+      print('fetchAllWalletBalances error: $e');
+    }
+  }
+
+  double get totalPortfolioOct {
+    if (walletPublicBalances.isEmpty) return publicBalance;
+    var total = 0.0;
+    for (final w in wallets) {
+      total += walletPublicBalances[w.address] ?? 0.0;
+    }
+    return total;
+  }
+
+  double get totalPortfolioUsd => totalPortfolioOct * octPrice;
 }
 
 Future<Map<String, String>?> _processInputWorker(String input) async {

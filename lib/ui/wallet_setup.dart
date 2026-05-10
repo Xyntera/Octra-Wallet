@@ -81,7 +81,7 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
                     maxLines: 3,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: CupertinoColors.systemGrey6.withOpacity(0.1),
+                      color: CupertinoColors.systemGrey6.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     style: const TextStyle(color: CupertinoColors.white),
@@ -240,7 +240,7 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
                   color: const Color(0xFF1C1C1E),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color: CupertinoColors.systemGrey.withOpacity(0.2)),
+                      color: CupertinoColors.systemGrey.withValues(alpha: 0.2)),
                 ),
                 child: Text(mnemonic,
                     style: GoogleFonts.sourceCodePro(
@@ -271,7 +271,7 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
                   color: const Color(0xFF1C1C1E),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color: CupertinoColors.systemGrey.withOpacity(0.2)),
+                      color: CupertinoColors.systemGrey.withValues(alpha: 0.2)),
                 ),
                 child: Text(privKey,
                     style: GoogleFonts.sourceCodePro(
@@ -342,10 +342,10 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.destructiveRed.withOpacity(0.1),
+        color: CupertinoColors.destructiveRed.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
         border:
-            Border.all(color: CupertinoColors.destructiveRed.withOpacity(0.3)),
+            Border.all(color: CupertinoColors.destructiveRed.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [

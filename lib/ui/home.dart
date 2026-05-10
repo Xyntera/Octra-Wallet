@@ -161,51 +161,45 @@ class _PvacBusyOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final wallet = context.watch<WalletController>();
-    return AnimatedOpacity(
-      opacity: wallet.isPvacBusy ? 1.0 : 0.0,
-      duration: const Duration(milliseconds: 220),
-      child: IgnorePointer(
-        ignoring: !wallet.isPvacBusy,
-        child: Positioned.fill(
-          child: ColoredBox(
-            color: const Color(0xB3000000),
-            child: SafeArea(
-              child: Center(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 32),
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1C1C1E),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white12),
+    if (!wallet.isPvacBusy) return const SizedBox.shrink();
+    return SizedBox.expand(
+      child: ColoredBox(
+        color: const Color(0xB3000000),
+        child: SafeArea(
+          child: Center(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1C1C1E),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CupertinoActivityIndicator(radius: 16),
+                  const SizedBox(height: 16),
+                  Text(
+                    wallet.pvacStatus ?? 'Running PVAC operation',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CupertinoActivityIndicator(radius: 16),
-                      const SizedBox(height: 16),
-                      Text(
-                        wallet.pvacStatus ?? 'Running PVAC operation',
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.outfit(
-                          color: Colors.white,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Keep the app open. Crypto proofs are running in a background worker.',
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.outfit(
-                          color: Colors.white70,
-                          fontSize: 13,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
+                  const SizedBox(height: 8),
+                  Text(
+                    'Keep the app open. Crypto proofs are running in a background worker.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      height: 1.35,
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ),

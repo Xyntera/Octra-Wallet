@@ -682,13 +682,11 @@ class WalletController extends ChangeNotifier {
       notifyListeners();
     }
     try {
-      return await task();
+      return await task().timeout(const Duration(seconds: 120));
     } finally {
-      if (showProgress) {
-        isPvacBusy = false;
-        pvacStatus = null;
-        notifyListeners();
-      }
+      isPvacBusy = false;
+      pvacStatus = null;
+      if (showProgress) notifyListeners();
     }
   }
 

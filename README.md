@@ -25,6 +25,7 @@ device through native libraries packaged in the app, not through a server.
 ### 🔐 Security First
 * **Non-Custodial**: You own your keys.
 * **PIN Protection**: Local wallet access is protected with a custom PIN.
+* **Biometric Auth**: Face ID / fingerprint unlock where the platform supports it.
 * **Encrypted Storage**: Sensitive data is stored securely using device storage.
 
 ### 💸 Wallet Operations
@@ -37,6 +38,11 @@ device through native libraries packaged in the app, not through a server.
 * **Tokens**: Discover token contracts, import a token by address, delete imported tokens, and send token transfers.
 * **Dynamic Fees**: Uses fee recommendations per operation type before submitting transactions.
 * **Refresh Support**: Pull to refresh for latest network state.
+
+### 📊 Portfolio (v1.0.2+)
+* **Live OCT/USD Price**: Fetches current price and 24h change from CoinGecko.
+* **7-Day Price Chart**: Interactive line chart with touch-to-inspect values.
+* **Per-Wallet Breakdown**: OCT balance and USD value for every wallet at a glance.
 
 ### 🎨 Customization & UX
 * **Multiple Wallets**: Create and manage multiple wallets in one app.
@@ -65,8 +71,10 @@ Technical docs live in [`docs/`](docs/).
 GitHub Actions setup is documented in
 [`docs/github-actions-build.md`](docs/github-actions-build.md).
 
-Release notes are tracked in
-[`docs/release-notes-v1.0.1.md`](docs/release-notes-v1.0.1.md).
+Release notes:
+- [v1.0.2](docs/release-notes-v1.0.2.md) — Portfolio tab, bug fixes
+- [v1.0.1](docs/release-notes-v1.0.1.md) — First production APK release
+- [v1.0.0](docs/release-notes-v1.0.0.md) — Initial release
 
 ## 📥 Download
 

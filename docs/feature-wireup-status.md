@@ -58,6 +58,14 @@ Release validation completed for:
   - custom token import by contract address
   - token transfer as signed contract call payloads
 
+- Portfolio tab (v1.0.2):
+  - live OCT/USD price fetch from CoinGecko with 5-minute cache
+  - 24h price change percentage badge (green/red)
+  - 7-day price chart via `fl_chart` `LineChart` with touch tooltips
+  - per-wallet OCT balance and USD value breakdown
+  - `invalidatePriceCache` / `fetchPriceData` / `fetchAllWalletBalances` on `WalletController`
+  - `isPriceFetching` loading state and refresh button in nav bar
+
 - Flutter UI:
   - public balance card
   - private balance card
@@ -72,7 +80,12 @@ Release validation completed for:
   - token list/import/send sheet
   - swipe-to-delete imported token entries
   - PIN/biometric confirmation before public send, bulk public send, encrypt, decrypt, private send, and claim
-  - full-screen PVAC progress overlay during long native privacy work
+  - full-screen PVAC progress overlay during long native privacy work (v1.0.2: fixed rendering artifact where `Positioned.fill` inside `AnimatedOpacity` caused a grey wash on Android release builds; replaced with conditional `SizedBox.shrink()` / `SizedBox.expand()`)
+  - `_runPvacTask` always resets `isPvacBusy` in finally block with 120s timeout guard
+
+- Bug fixes (v1.0.2):
+  - history stuck loading: `isLoading` now always resets in `refresh()` finally block regardless of concurrent refresh serial
+  - PVAC overlay blocking UI after wallet import: removed invalid `Positioned.fill` nesting
 
 ## Native Stealth Features
 

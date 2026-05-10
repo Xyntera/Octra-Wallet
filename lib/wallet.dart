@@ -69,6 +69,7 @@ class WalletController extends ChangeNotifier {
   final Map<String, Map<String, String>> _tokenMetaCache = {};
   final Map<String, Map<String, dynamic>> _feeCache = {};
   final Set<String> _pvacRegistrationInFlight = {};
+  final Map<String, DateTime> _pvacRegistrationCache = {};
   DateTime? _feeCacheAt;
   int _refreshSerial = 0;
   bool isLoading = false;
@@ -1170,12 +1171,22 @@ class WalletController extends ChangeNotifier {
     });
   }
 
+  bool _isPvacCached(String address) {
+    final t = _pvacRegistrationCache[address];
+    return t != null &&
+        DateTime.now().difference(t) < const Duration(minutes: 5);
+  }
+
   Future<bool> ensurePvacRegistered({
     Wallet? wallet,
     bool showProgress = true,
   }) async {
     wallet ??= currentWallet;
     if (wallet == null || !nativeCore.isAvailable) return false;
+
+    // Fast path: skip key derivation + RPC check if recently confirmed.
+    if (_isPvacCached(wallet.address)) return true;
+
     final activeWallet = wallet;
 
     final registration = await _runPvacTask(
@@ -1191,7 +1202,10 @@ class WalletController extends ChangeNotifier {
 
     final remote = await rpc.getPvacPubkeyRpc(wallet.address);
     final remotePvacPubkey = remote?['pvac_pubkey']?.toString();
-    if (remotePvacPubkey == localPvacPubkey) return true;
+    if (remotePvacPubkey == localPvacPubkey) {
+      _pvacRegistrationCache[wallet.address] = DateTime.now();
+      return true;
+    }
     if (remotePvacPubkey != null &&
         remotePvacPubkey.isNotEmpty &&
         remotePvacPubkey != 'null') {
@@ -1215,9 +1229,16 @@ class WalletController extends ChangeNotifier {
       aesKatHex,
     );
 
-    if (rpc.rpcError(res) == null) return true;
+    if (rpc.rpcError(res) == null) {
+      _pvacRegistrationCache[wallet.address] = DateTime.now();
+      return true;
+    }
     final error = rpc.rpcError(res) ?? res.text;
-    return error.contains('already registered');
+    final alreadyRegistered = error.contains('already registered');
+    if (alreadyRegistered) {
+      _pvacRegistrationCache[wallet.address] = DateTime.now();
+    }
+    return alreadyRegistered;
   }
 
   Future<List<String>> _customTokenAddresses(Wallet wallet) async {
@@ -1315,10 +1336,18 @@ class WalletController extends ChangeNotifier {
           '0';
       if (cipher.isEmpty || cipher == '0') return;
 
-      final decrypted = await pvacWorker.fheDecrypt(
-        privateKeyBase64: wallet.privateKeyBase64,
-        cipher: cipher,
-      );
+      // Run fheDecrypt directly via nativeCore (not through the serial PVAC
+      // worker queue) so it is never blocked behind a queued registerPubkey.
+      // fheDecrypt is fast (<500 ms) so a brief main-isolate call is fine.
+      final decrypted = await nativeCore.executePrivacyOperation({
+        'op': 'fhe_decrypt',
+        'private_key_b64': wallet.privateKeyBase64,
+        'cipher': cipher,
+      });
+      if (decrypted['ok'] != true) {
+        throw StateError(
+            (decrypted['error'] ?? 'fhe_decrypt failed').toString());
+      }
       if (!_isActiveWallet(wallet)) return;
       final raw = int.tryParse(decrypted['amount_raw']?.toString() ?? '0') ?? 0;
       encryptedRaw = raw < 0 ? 0 : raw;

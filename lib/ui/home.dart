@@ -1252,20 +1252,27 @@ class _DashboardTabState extends State<DashboardTab> {
                                 final wallet = context.read<WalletController>();
                                 final res = await wallet.makePrivateTransfer(
                                     to, amount);
-                                if (context.mounted) Navigator.pop(context);
                                 final err = wallet.rpc.rpcError(res);
+                                if (err != null) {
+                                  // RPC-level error: keep sheet open so user can retry
+                                  if (!context.mounted) return;
+                                  setState(() => isSubmitting = false);
+                                  _showResultDialog(context, err);
+                                  return;
+                                }
+                                if (context.mounted) Navigator.pop(context);
                                 final result = wallet.rpc.rpcResult(res);
-                                final msg = err ??
-                                    (result is Map && result['tx_hash'] != null
-                                        ? 'Submitted: ${result['tx_hash']}'
-                                        : res.text);
+                                final msg = result is Map &&
+                                        result['tx_hash'] != null
+                                    ? 'Submitted: ${result['tx_hash']}'
+                                    : res.text;
                                 if (parentContext.mounted)
                                   _showResultDialog(parentContext, msg);
                               } catch (e) {
-                                if (context.mounted) Navigator.pop(context);
-                                if (parentContext.mounted)
-                                  _showResultDialog(
-                                      parentContext, e.toString());
+                                // PVAC or other exception: keep sheet open so user can retry
+                                if (!context.mounted) return;
+                                setState(() => isSubmitting = false);
+                                _showResultDialog(context, e.toString());
                               }
                             },
                       child: isSubmitting

@@ -4,15 +4,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Octra Wallet - Native Private Mobile Wallet</title>
+    <title>Octra Wallet — Native Private Mobile Wallet</title>
     <meta name="description"
-        content="Open-source Flutter wallet for Octra with native PVAC privacy operations, dynamic fees, OctraScan history, and downloadable Android APK.">
+        content="Open-source Flutter wallet for Octra with native PVAC privacy operations, portfolio tracking, dynamic fees, and downloadable Android APK.">
     <meta name="keywords"
         content="Octra Wallet, Octra, OCT, PVAC, FHE, Flutter wallet, Android wallet, open source wallet, OctraScan">
     <link rel="canonical" href="https://octrawallet.app">
     <link rel="icon" type="image/png" href="assets/favicon.png">
 
-    <meta property="og:title" content="Octra Wallet - Native Private Mobile Wallet">
+    <meta property="og:title" content="Octra Wallet — Native Private Mobile Wallet">
     <meta property="og:description"
         content="Open-source Flutter mobile wallet for Octra with native PVAC privacy operations and a production Android APK.">
     <meta property="og:image" content="https://octrawallet.app/assets/app-exact-hero.png">
@@ -30,40 +30,35 @@
       "downloadUrl": "https://github.com/Xyntera/Octra-Wallet/releases/latest",
       "codeRepository": "https://github.com/Xyntera/Octra-Wallet",
       "license": "https://github.com/Xyntera/Octra-Wallet/blob/main/LICENSE",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "USD"
-      },
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
       "description": "Open-source Flutter mobile wallet for Octra with native PVAC privacy operations."
     }
     </script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Manrope:wght@400;500;600;700;800&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
 <body>
-    <div class="site-glow glow-one"></div>
-    <div class="site-glow glow-two"></div>
 
-    <nav class="topbar">
+    <!-- ── Navbar ─────────────────────────────────────────────── -->
+    <nav class="topbar" id="topbar">
         <a class="brand" href="#top" aria-label="Octra Wallet home">
             <img src="assets/owl-logo.png" alt="" class="brand-mark">
             <span>Octra Wallet</span>
         </a>
         <div class="nav-links" id="navLinks">
-            <a href="#features">Features</a>
-            <a href="#architecture">Architecture</a>
-            <a href="#security">Security</a>
+            <a href="#screenshots" onclick="closeMenu()">Screenshots</a>
+            <a href="#features" onclick="closeMenu()">Features</a>
+            <a href="#architecture" onclick="closeMenu()">Architecture</a>
             <a href="https://github.com/Xyntera/Octra-Wallet" target="_blank" rel="noreferrer">GitHub</a>
-            <a class="nav-cta" href="https://github.com/Xyntera/Octra-Wallet/releases/latest" target="_blank"
-                rel="noreferrer">Download APK</a>
+            <a class="nav-cta" href="https://github.com/Xyntera/Octra-Wallet/releases/download/v1.0.2/Octra-Wallet-v1.0.2-android.apk" target="_blank" rel="noreferrer">
+                <i data-lucide="download" class="icon-sm"></i>
+                Download APK
+            </a>
         </div>
         <button class="menu-button" type="button" onclick="toggleMenu()" aria-label="Toggle navigation">
             <i data-lucide="menu"></i>
@@ -71,159 +66,245 @@
     </nav>
 
     <main id="top">
-        <section class="hero section-shell">
+
+        <!-- ── Hero ──────────────────────────────────────────────── -->
+        <section class="hero section-shell reveal">
             <div class="hero-copy">
-                <span class="eyebrow">Open-source native mobile wallet</span>
-                <h1>Private Octra operations, packaged as a real mobile APK.</h1>
+                <span class="eyebrow">Open-source · Android · v1.0.2</span>
+                <h1>Your Octra.<br>Your keys.<br>Your device.</h1>
                 <p class="hero-lede">
-                    Octra Wallet is a Flutter client with native PVAC libraries inside the app.
-                    Public sends, encrypted balances, stealth flows, dynamic fees, and OctraScan
-                    history run without a wallet server process.
+                    Octra Wallet bundles native PVAC libraries directly into the APK.
+                    Public sends, encrypted balances, stealth flows, portfolio tracking,
+                    and OctraScan history — no wallet server needed.
                 </p>
                 <div class="hero-actions">
-                    <a class="button button-primary"
-                        href="https://github.com/Xyntera/Octra-Wallet/releases/latest" target="_blank"
-                        rel="noreferrer">
+                    <a class="button button-primary" href="https://github.com/Xyntera/Octra-Wallet/releases/download/v1.0.2/Octra-Wallet-v1.0.2-android.apk" target="_blank" rel="noreferrer">
                         <i data-lucide="download"></i>
-                        Download latest APK
+                        Download v1.0.2 APK
                     </a>
-                    <a class="button button-secondary" href="https://github.com/Xyntera/Octra-Wallet" target="_blank"
-                        rel="noreferrer">
+                    <a class="button button-ghost" href="https://github.com/Xyntera/Octra-Wallet" target="_blank" rel="noreferrer">
                         <i data-lucide="github"></i>
                         View source
                     </a>
                 </div>
                 <div class="release-strip">
-                    <span>Latest production release</span>
-                    <strong>v1.0.2</strong>
-                    <span>Native PVAC included</span>
+                    <span class="badge badge-green">Latest</span>
+                    <span class="mono">v1.0.2</span>
+                    <span class="sep">·</span>
+                    <span>Native PVAC · Portfolio tab · Bug fixes</span>
                 </div>
             </div>
 
-            <div class="hero-visual" aria-label="Octra Wallet app preview">
-                <div class="phone-frame">
-                    <img src="assets/app-exact-hero.png" alt="Octra Wallet mobile interface">
+            <div class="hero-visual">
+                <div class="phone-hero">
+                    <div class="phone-notch"></div>
+                    <img src="assets/app-exact-hero.png" alt="Octra Wallet home screen">
                 </div>
-                <div class="status-card card-one">
-                    <span class="status-label">Native core</span>
+                <div class="float-card float-top">
+                    <span class="mono label">Native core</span>
                     <strong>liboctra_core.so</strong>
                 </div>
-                <div class="status-card card-two">
-                    <span class="status-label">Privacy work</span>
+                <div class="float-card float-bottom">
+                    <span class="mono label">Privacy ops</span>
                     <strong>Background isolate</strong>
                 </div>
             </div>
         </section>
 
-        <section class="metrics section-shell" aria-label="Release status">
-            <div class="metric-card">
-                <span>Build</span>
-                <strong>Android APK</strong>
-                <p>Release artifact verified with native runtime libraries.</p>
+        <!-- ── Stats ─────────────────────────────────────────────── -->
+        <section class="metrics section-shell">
+            <div class="metric-card reveal">
+                <i data-lucide="cpu" class="metric-icon"></i>
+                <strong>On-device PVAC</strong>
+                <p>Privacy operations run locally via FFI — nothing sent to a server.</p>
             </div>
-            <div class="metric-card">
-                <span>Core</span>
-                <strong>PVAC FFI</strong>
-                <p>Native privacy operations are executed locally on device.</p>
+            <div class="metric-card reveal" style="animation-delay:.1s">
+                <i data-lucide="chart-line" class="metric-icon"></i>
+                <strong>Portfolio tracking</strong>
+                <p>Live OCT price, 7-day chart, and per-wallet USD breakdown.</p>
             </div>
-            <div class="metric-card">
-                <span>License</span>
-                <strong>GPL-2.0+</strong>
-                <p>Open source with OpenSSL linking permission and notices.</p>
+            <div class="metric-card reveal" style="animation-delay:.2s">
+                <i data-lucide="shield-check" class="metric-icon"></i>
+                <strong>GPL-2.0+ open source</strong>
+                <p>Fully auditable. Every release built via GitHub Actions CI.</p>
             </div>
         </section>
 
-        <section class="section-shell split-section" id="features">
+        <!-- ── Screenshots ───────────────────────────────────────── -->
+        <section class="section-shell screenshots-section reveal" id="screenshots">
             <div class="section-heading">
+                <span class="eyebrow">App screenshots</span>
+                <h2>Every screen, pixel-perfect.</h2>
+                <p>Swipe to explore all the screens from the latest v1.0.2 build.</p>
+            </div>
+            <div class="screenshots-scroll">
+                <div class="screenshot-item">
+                    <div class="ss-phone">
+                        <div class="ss-notch"></div>
+                        <img src="assets/app-exact-hero.png" alt="Home — balance and actions">
+                    </div>
+                    <span class="ss-label">Home</span>
+                </div>
+                <div class="screenshot-item">
+                    <div class="ss-phone">
+                        <div class="ss-notch"></div>
+                        <img src="assets/dashboard.png" alt="Dashboard view">
+                    </div>
+                    <span class="ss-label">Dashboard</span>
+                </div>
+                <div class="screenshot-item">
+                    <div class="ss-phone">
+                        <div class="ss-notch"></div>
+                        <img src="assets/android-hero.png" alt="Portfolio tab">
+                    </div>
+                    <span class="ss-label ss-new">Portfolio <span class="badge badge-blue">New</span></span>
+                </div>
+                <div class="screenshot-item">
+                    <div class="ss-phone">
+                        <div class="ss-notch"></div>
+                        <img src="assets/real-hero.png" alt="Send and receive">
+                    </div>
+                    <span class="ss-label">Send &amp; Receive</span>
+                </div>
+                <div class="screenshot-item">
+                    <div class="ss-phone">
+                        <div class="ss-notch"></div>
+                        <img src="assets/ultra-hero.png" alt="PVAC privacy operations">
+                    </div>
+                    <span class="ss-label">PVAC Privacy</span>
+                </div>
+                <div class="screenshot-item">
+                    <div class="ss-phone">
+                        <div class="ss-notch"></div>
+                        <img src="assets/spatial-hero.png" alt="Wallet management">
+                    </div>
+                    <span class="ss-label">Wallets</span>
+                </div>
+            </div>
+            <div class="scroll-hint">
+                <i data-lucide="move-horizontal" class="icon-sm"></i>
+                <span>Swipe to see more</span>
+            </div>
+        </section>
+
+        <!-- ── Features ──────────────────────────────────────────── -->
+        <section class="section-shell split-section reveal" id="features">
+            <div class="section-intro">
                 <span class="eyebrow">Wallet features</span>
                 <h2>Built for day-to-day Octra usage.</h2>
             </div>
             <div class="feature-grid">
-                <article class="feature-card">
-                    <i data-lucide="send"></i>
-                    <h3>Public and bulk transfers</h3>
+                <article class="feature-card reveal">
+                    <div class="feature-icon-wrap">
+                        <i data-lucide="send"></i>
+                    </div>
+                    <h3>Public &amp; bulk transfers</h3>
                     <p>Send OCT normally or prepare up to five recipients with sequential nonces.</p>
                 </article>
-                <article class="feature-card">
-                    <i data-lucide="lock-keyhole"></i>
+                <article class="feature-card reveal" style="animation-delay:.05s">
+                    <div class="feature-icon-wrap">
+                        <i data-lucide="lock-keyhole"></i>
+                    </div>
                     <h3>Private balance flows</h3>
                     <p>Register PVAC, encrypt public OCT, decrypt private OCT, and claim stealth transfers.</p>
                 </article>
-                <article class="feature-card">
-                    <i data-lucide="history"></i>
+                <article class="feature-card reveal" style="animation-delay:.1s">
+                    <div class="feature-icon-wrap blue">
+                        <i data-lucide="chart-line"></i>
+                    </div>
+                    <h3>Portfolio tab <span class="badge badge-blue">New</span></h3>
+                    <p>Live OCT/USD price, 7-day chart from CoinGecko, and per-wallet balance breakdown.</p>
+                </article>
+                <article class="feature-card reveal" style="animation-delay:.15s">
+                    <div class="feature-icon-wrap">
+                        <i data-lucide="history"></i>
+                    </div>
                     <h3>Scoped history</h3>
                     <p>OctraScan-backed history is scoped to the active wallet with explorer links.</p>
                 </article>
-                <article class="feature-card">
-                    <i data-lucide="wallet-cards"></i>
-                    <h3>Multi-wallet management</h3>
+                <article class="feature-card reveal" style="animation-delay:.2s">
+                    <div class="feature-icon-wrap">
+                        <i data-lucide="wallet-cards"></i>
+                    </div>
+                    <h3>Multi-wallet</h3>
                     <p>Create, import, watch-only, rename, export, and switch wallets locally.</p>
                 </article>
-                <article class="feature-card">
-                    <i data-lucide="coins"></i>
-                    <h3>Custom tokens</h3>
-                    <p>Import token contracts, view balances, remove tokens, and send token transfers.</p>
-                </article>
-                <article class="feature-card">
-                    <i data-lucide="fingerprint"></i>
-                    <h3>Transaction confirmation</h3>
-                    <p>PIN and biometric checks protect transaction-changing operations.</p>
+                <article class="feature-card reveal" style="animation-delay:.25s">
+                    <div class="feature-icon-wrap">
+                        <i data-lucide="fingerprint"></i>
+                    </div>
+                    <h3>PIN &amp; biometrics</h3>
+                    <p>PIN and biometric checks protect every transaction-changing operation.</p>
                 </article>
             </div>
         </section>
 
-        <section class="architecture section-shell" id="architecture">
+        <!-- ── Architecture ──────────────────────────────────────── -->
+        <section class="architecture section-shell reveal" id="architecture">
             <div class="section-heading centered">
                 <span class="eyebrow">Architecture</span>
                 <h2>No local server. No hosted wallet core.</h2>
-                <p>
-                    Flutter owns the interface. Native libraries own PVAC-heavy wallet-core work.
-                    The UI stays responsive because long crypto calls run outside the main isolate.
-                </p>
+                <p>Flutter owns the interface. Native libraries own PVAC-heavy work. The UI stays responsive because long crypto calls run in background isolates.</p>
             </div>
             <div class="pipeline">
-                <div class="pipeline-step">
-                    <span>01</span>
-                    <h3>Flutter client</h3>
-                    <p>Wallet state, screens, confirmations, QR flows, history, and user actions.</p>
+                <div class="pipeline-step reveal">
+                    <span class="step-num">01</span>
+                    <div class="feature-icon-wrap small">
+                        <i data-lucide="smartphone"></i>
+                    </div>
+                    <h3>Flutter UI</h3>
+                    <p>Wallet state, screens, confirmations, QR flows, history, and portfolio.</p>
                 </div>
                 <div class="pipeline-arrow"></div>
-                <div class="pipeline-step">
-                    <span>02</span>
+                <div class="pipeline-step reveal" style="animation-delay:.1s">
+                    <span class="step-num">02</span>
+                    <div class="feature-icon-wrap small">
+                        <i data-lucide="cable"></i>
+                    </div>
                     <h3>Dart FFI bridge</h3>
-                    <p>Stable JSON command surface between Flutter and native wallet-core code.</p>
+                    <p>JSON command surface between Flutter and native wallet-core.</p>
                 </div>
                 <div class="pipeline-arrow"></div>
-                <div class="pipeline-step">
-                    <span>03</span>
+                <div class="pipeline-step reveal" style="animation-delay:.2s">
+                    <span class="step-num">03</span>
+                    <div class="feature-icon-wrap small">
+                        <i data-lucide="cpu"></i>
+                    </div>
                     <h3>Native PVAC</h3>
-                    <p>Vendored PVAC backend packaged as Android shared libraries.</p>
+                    <p>Vendored PVAC backend as Android shared libraries, runs fully on-device.</p>
                 </div>
             </div>
         </section>
 
-        <section class="section-shell proof-section" id="security">
+        <!-- ── Security ──────────────────────────────────────────── -->
+        <section class="section-shell proof-section reveal" id="security">
             <div class="proof-panel">
                 <span class="eyebrow">Open-source proof</span>
-                <h2>Auditable project hygiene included.</h2>
+                <h2>Auditable by design.</h2>
                 <p>
-                    The repository now includes license, notices, contribution policy, security
-                    disclosure policy, governance notes, issue templates, and pull request checks.
+                    The repository includes license, notices, contribution policy, security
+                    disclosure policy, governance notes, issue templates, and CI checks.
                 </p>
                 <div class="proof-links">
-                    <a href="https://github.com/Xyntera/Octra-Wallet/blob/main/LICENSE" target="_blank"
-                        rel="noreferrer">License</a>
-                    <a href="https://github.com/Xyntera/Octra-Wallet/blob/main/SECURITY.md" target="_blank"
-                        rel="noreferrer">Security</a>
-                    <a href="https://github.com/Xyntera/Octra-Wallet/blob/main/CONTRIBUTING.md" target="_blank"
-                        rel="noreferrer">Contributing</a>
-                    <a href="https://github.com/Xyntera/Octra-Wallet/blob/main/NOTICE.md" target="_blank"
-                        rel="noreferrer">Notices</a>
+                    <a href="https://github.com/Xyntera/Octra-Wallet/blob/main/LICENSE" target="_blank" rel="noreferrer">
+                        <i data-lucide="file-text" class="icon-sm"></i> License
+                    </a>
+                    <a href="https://github.com/Xyntera/Octra-Wallet/blob/main/SECURITY.md" target="_blank" rel="noreferrer">
+                        <i data-lucide="shield" class="icon-sm"></i> Security
+                    </a>
+                    <a href="https://github.com/Xyntera/Octra-Wallet/blob/main/CONTRIBUTING.md" target="_blank" rel="noreferrer">
+                        <i data-lucide="git-pull-request" class="icon-sm"></i> Contributing
+                    </a>
+                    <a href="https://github.com/Xyntera/Octra-Wallet/blob/main/NOTICE.md" target="_blank" rel="noreferrer">
+                        <i data-lucide="info" class="icon-sm"></i> Notices
+                    </a>
                 </div>
             </div>
-            <div class="warning-panel">
-                <i data-lucide="shield-alert"></i>
-                <h3>Non-custodial warning</h3>
+            <div class="warning-panel reveal">
+                <div class="warning-icon-wrap">
+                    <i data-lucide="shield-alert"></i>
+                </div>
+                <h3>Non-custodial</h3>
                 <p>
                     You control your keys. Nobody can recover a lost seed phrase or private key.
                     Test with small amounts first and verify every release before use.
@@ -231,34 +312,45 @@
             </div>
         </section>
 
-        <section class="download section-shell" id="download">
-            <div>
-                <span class="eyebrow">Production release</span>
-                <h2>Download the latest Android APK.</h2>
-                <p>
-                    The release APK was built through GitHub Actions and verified to include
-                    `liboctra_core.so`, OpenSSL `libcrypto.so`, and `libc++_shared.so`.
-                </p>
-            </div>
-            <div class="download-actions">
-                <a class="button button-primary"
-                    href="https://github.com/Xyntera/Octra-Wallet/releases/download/v1.0.2/Octra-Wallet-v1.0.2-android.apk"
-                    target="_blank" rel="noreferrer">
-                    <i data-lucide="package-check"></i>
-                    Download v1.0.2 APK
-                </a>
-                <a class="button button-secondary" href="https://github.com/Xyntera/Octra-Wallet/releases/latest"
-                    target="_blank" rel="noreferrer">
-                    Release notes
-                </a>
+        <!-- ── Download CTA ──────────────────────────────────────── -->
+        <section class="download-section section-shell reveal" id="download">
+            <div class="download-inner">
+                <div class="download-copy">
+                    <span class="eyebrow">Production release</span>
+                    <h2>Download the Android APK.</h2>
+                    <p>
+                        Built through GitHub Actions CI and verified to include
+                        <span class="mono">liboctra_core.so</span>, <span class="mono">libcrypto.so</span>, and <span class="mono">libc++_shared.so</span>.
+                        Minimum Android 6.0 (API 23).
+                    </p>
+                </div>
+                <div class="download-actions">
+                    <a class="button button-primary button-xl"
+                        href="https://github.com/Xyntera/Octra-Wallet/releases/download/v1.0.2/Octra-Wallet-v1.0.2-android.apk"
+                        target="_blank" rel="noreferrer">
+                        <i data-lucide="package-check"></i>
+                        Download v1.0.2 APK
+                    </a>
+                    <a class="button button-ghost"
+                        href="https://github.com/Xyntera/Octra-Wallet/releases/latest"
+                        target="_blank" rel="noreferrer">
+                        <i data-lucide="file-clock"></i>
+                        Release notes
+                    </a>
+                    <p class="download-note">Enable <em>Install unknown apps</em> in Android settings before installing.</p>
+                </div>
             </div>
         </section>
+
     </main>
 
     <footer class="footer">
-        <div>
-            <strong>Octra Wallet</strong>
-            <p>octrawallet.app - By Glaqz</p>
+        <div class="footer-brand">
+            <img src="assets/owl-logo.png" alt="" class="brand-mark">
+            <div>
+                <strong>Octra Wallet</strong>
+                <p>octrawallet.app · By Glaqz</p>
+            </div>
         </div>
         <div class="footer-links">
             <a href="https://octrascan.io" target="_blank" rel="noreferrer">OctraScan</a>
@@ -271,19 +363,38 @@
         lucide.createIcons();
 
         function toggleMenu() {
-            document.getElementById('navLinks').classList.toggle('open');
+            const links = document.getElementById('navLinks');
+            links.classList.toggle('open');
         }
 
+        function closeMenu() {
+            document.getElementById('navLinks').classList.remove('open');
+        }
+
+        // Scroll-based navbar shadow
+        window.addEventListener('scroll', () => {
+            document.getElementById('topbar').classList.toggle('scrolled', window.scrollY > 10);
+        });
+
+        // Intersection observer for reveal animations
         const observer = new IntersectionObserver((entries) => {
-            entries.forEach((entry) => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('visible');
+            entries.forEach(e => {
+                if (e.isIntersecting) {
+                    e.target.classList.add('visible');
+                    observer.unobserve(e.target);
                 }
             });
-        }, { threshold: 0.12 });
+        }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
 
-        document.querySelectorAll('.section-shell, .feature-card, .metric-card').forEach((element) => {
-            observer.observe(element);
+        document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+        // Close menu on outside click
+        document.addEventListener('click', (e) => {
+            const nav = document.getElementById('navLinks');
+            const btn = document.querySelector('.menu-button');
+            if (nav.classList.contains('open') && !nav.contains(e.target) && !btn.contains(e.target)) {
+                nav.classList.remove('open');
+            }
         });
     </script>
 </body>

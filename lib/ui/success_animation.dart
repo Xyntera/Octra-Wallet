@@ -9,8 +9,10 @@ class SuccessAnimation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Icon: scale(400ms) → hold(800ms) → fadeOut(400ms) → callback at 1600ms
+    // Text: fadeIn+moveY(50..250ms) → hold(950ms) → fadeOut(400ms) → done at 1600ms
     return Material(
-      color: Colors.black.withOpacity(0.9), // Overlay
+      color: Colors.black.withValues(alpha: 0.9),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -24,19 +26,25 @@ class SuccessAnimation extends StatelessWidget {
               ),
               child: const Icon(Icons.check, size: 60, color: Colors.white),
             )
-            .animate()
-            .scale(duration: 400.ms, curve: Curves.elasticOut)
-            .then(delay: 1000.ms)
-            .fadeOut(duration: 500.ms)
-            .callback(callback: (_) => onComplete()),
-
+                .animate()
+                .scale(duration: 400.ms, curve: Curves.elasticOut)
+                .then(delay: 800.ms)
+                .fadeOut(duration: 400.ms)
+                .callback(callback: (_) => onComplete()),
             const SizedBox(height: 24),
             Text(
-              "Sent!",
-              style: GoogleFonts.outfit(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
-            ).animate()
-             .fadeIn(delay: 200.ms).moveY(begin: 20, end: 0)
-             .then(delay: 800.ms).fadeOut(duration: 500.ms)
+              'Done!',
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+              ),
+            )
+                .animate()
+                .fadeIn(delay: 50.ms, duration: 200.ms)
+                .moveY(begin: 16, end: 0, duration: 250.ms)
+                .then(delay: 950.ms)
+                .fadeOut(duration: 400.ms),
           ],
         ),
       ),

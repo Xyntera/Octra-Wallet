@@ -102,7 +102,6 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
                               ? null
                               : () async {
                                   setState(() => _isLoading = true);
-                                  await Future.delayed(300.ms);
                                   final wallet =
                                       context.read<WalletController>();
                                   final data = await wallet

@@ -19,24 +19,23 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class WalletController extends ChangeNotifier {
   final _storage = const FlutterSecureStorage();
 
-  // Security
-  Future<bool> get hasPin async => await _storage.containsKey(key: 'user_pin');
-
-  Future<bool> get isSecurityEnabled async {
-    final val = await _storage.read(key: 'security_enabled');
-    if (val == null)
-      return await hasPin; // Default to enabled if PIN exists but no setting
-    return val == 'true';
-  }
+  // Security — sync cache populated during init(); async getters for legacy callers
+  bool _hasPinCache = false;
+  bool _securityEnabledCache = false;
+  bool get hasPinSync => _hasPinCache;
+  bool get securityEnabledSync => _securityEnabledCache;
+  Future<bool> get hasPin async => _hasPinCache;
+  Future<bool> get isSecurityEnabled async => _securityEnabledCache;
 
   Future<void> setSecurityEnabled(bool enabled) async {
     await _storage.write(key: 'security_enabled', value: enabled.toString());
+    _securityEnabledCache = enabled;
     notifyListeners();
   }
 
   Future<void> setPin(String pin) async {
     await _storage.write(key: 'user_pin', value: pin);
-    // Auto-enable security when setting PIN
+    _hasPinCache = true;
     await setSecurityEnabled(true);
     notifyListeners();
   }
@@ -80,7 +79,13 @@ class WalletController extends ChangeNotifier {
 
   /// INITIALIZATION
   Future<void> init() async {
-    await loadWallets();
+    final pinFuture = _storage.containsKey(key: 'user_pin');
+    final secFuture = _storage.read(key: 'security_enabled');
+    final walletsFuture = loadWallets();
+    _hasPinCache = await pinFuture;
+    final secVal = await secFuture;
+    _securityEnabledCache = secVal == null ? _hasPinCache : secVal == 'true';
+    await walletsFuture;
   }
 
   Future<void> loadWallets() async {
@@ -243,56 +248,8 @@ class WalletController extends ChangeNotifier {
   }
 
   /// IMPORT WALLET LOGIC (Returns wallet data for preview/confirm)
-  Future<Map<String, String>?> processInput(String input) async {
-    Uint8List privateKeyBytes;
-    String? mnemonic;
-
-    try {
-      final normalizedInput = input.trim().replaceAll(RegExp(r'\s+'), ' ');
-      final wordCount =
-          normalizedInput.isEmpty ? 0 : normalizedInput.split(' ').length;
-      if (wordCount >= 12) {
-        mnemonic = normalizedInput.toLowerCase();
-        if (!bip39.validateMnemonic(mnemonic)) {
-          return null;
-        }
-        final seed = bip39.mnemonicToSeed(mnemonic);
-        privateKeyBytes =
-            await crypto_utils.deriveForNetwork(Uint8List.fromList(seed));
-      } else {
-        privateKeyBytes = _decodePrivateKey(normalizedInput);
-      }
-
-      if (privateKeyBytes.length != 32) return null;
-
-      final algorithm = Ed25519();
-      final keyPair = await algorithm.newKeyPairFromSeed(privateKeyBytes);
-      final pubKey = await keyPair.extractPublicKey();
-      final addr =
-          await octraAddressFromPubKey(Uint8List.fromList(pubKey.bytes));
-
-      return {
-        'address': addr,
-        'privateKeyBase64': base64Encode(privateKeyBytes),
-        'mnemonic': mnemonic ?? ''
-      };
-    } catch (e) {
-      print("Error processing input: $e");
-      return null;
-    }
-  }
-
-  Uint8List _decodePrivateKey(String input) {
-    final clean = input.trim();
-    if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(clean)) {
-      final bytes = <int>[];
-      for (var i = 0; i < clean.length; i += 2) {
-        bytes.add(int.parse(clean.substring(i, i + 2), radix: 16));
-      }
-      return Uint8List.fromList(bytes);
-    }
-    return base64Decode(clean);
-  }
+  Future<Map<String, String>?> processInput(String input) =>
+      compute(_processInputWorker, input);
 
   Future<List<Wallet>> _repairWalletList(List<Wallet> input) async {
     final repaired = <Wallet>[];
@@ -1486,6 +1443,49 @@ class WalletController extends ChangeNotifier {
       keyPair: keyPair,
     );
     return base64Encode(signature.bytes);
+  }
+}
+
+Future<Map<String, String>?> _processInputWorker(String input) async {
+  try {
+    final normalized = input.trim().replaceAll(RegExp(r'\s+'), ' ');
+    final wordCount = normalized.isEmpty ? 0 : normalized.split(' ').length;
+    Uint8List privateKeyBytes;
+    String? mnemonic;
+
+    if (wordCount >= 12) {
+      mnemonic = normalized.toLowerCase();
+      if (!bip39.validateMnemonic(mnemonic)) return null;
+      final seed = bip39.mnemonicToSeed(mnemonic);
+      privateKeyBytes =
+          await crypto_utils.deriveForNetwork(Uint8List.fromList(seed));
+    } else {
+      final clean = normalized.trim();
+      if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(clean)) {
+        final bytes = <int>[];
+        for (var i = 0; i < clean.length; i += 2) {
+          bytes.add(int.parse(clean.substring(i, i + 2), radix: 16));
+        }
+        privateKeyBytes = Uint8List.fromList(bytes);
+      } else {
+        privateKeyBytes = base64Decode(clean);
+      }
+    }
+
+    if (privateKeyBytes.length != 32) return null;
+
+    final algorithm = Ed25519();
+    final keyPair = await algorithm.newKeyPairFromSeed(privateKeyBytes);
+    final pubKey = await keyPair.extractPublicKey();
+    final addr = await octraAddressFromPubKey(Uint8List.fromList(pubKey.bytes));
+
+    return {
+      'address': addr,
+      'privateKeyBase64': base64Encode(privateKeyBytes),
+      'mnemonic': mnemonic ?? '',
+    };
+  } catch (_) {
+    return null;
   }
 }
 

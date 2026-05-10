@@ -292,7 +292,8 @@ class _DashboardTabState extends State<DashboardTab> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 32),
-                  Wrap(
+                  RepaintBoundary(
+                    child: Wrap(
                     alignment: WrapAlignment.center,
                     spacing: 22,
                     runSpacing: 20,
@@ -349,6 +350,7 @@ class _DashboardTabState extends State<DashboardTab> {
                       ),
                     ],
                   ).animate().fadeIn(delay: 200.ms),
+                  ), // RepaintBoundary
                   const SizedBox(height: 40),
                 ],
               ),
@@ -448,7 +450,7 @@ class _DashboardTabState extends State<DashboardTab> {
       barrierDismissible: true,
       barrierLabel: 'Close menu',
       barrierColor: Colors.black54,
-      transitionDuration: const Duration(milliseconds: 240),
+      transitionDuration: const Duration(milliseconds: 260),
       pageBuilder: (dialogContext, _, __) {
         return Align(
           alignment: Alignment.centerLeft,

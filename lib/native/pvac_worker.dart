@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:isolate';
 import 'dart:math';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 import 'octra_core_bridge.dart';
 
@@ -117,7 +116,7 @@ class PvacWorker {
     final completer = Completer<Map<String, dynamic>>();
     _tail = _tail.catchError((_) {}).then((_) async {
       try {
-        completer.complete(await Isolate.run(() => _executePvac(payload)));
+        completer.complete(await compute(_executePvac, payload));
       } catch (error, stackTrace) {
         completer.completeError(error, stackTrace);
       }

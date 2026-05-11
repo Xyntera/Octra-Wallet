@@ -3,7 +3,17 @@ name: Flutter Native Mobile
 on:
   push:
     branches: ["**"]
+    paths-ignore:
+      - "landing/**"
+      - "docs/**"
+      - "*.md"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/pull_request_template.md"
   pull_request:
+    paths-ignore:
+      - "landing/**"
+      - "docs/**"
+      - "*.md"
   workflow_dispatch:
 
 permissions:

@@ -149,5 +149,5 @@ for details.
 
 ---
 <div align="center">
-  <sub>Octra Wallet | <a href="https://octrawallet.app">octrawallet.app</a> | By Glaqz</sub>
+  <sub>Octra Wallet | <a href="https://octrawallet.com">octrawallet.com</a> | By Glaqz</sub>
 </div>

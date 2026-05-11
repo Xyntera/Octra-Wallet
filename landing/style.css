@@ -433,8 +433,9 @@ h3 {
 .ss-phone img {
     border-radius: 26px;
     width: 100%;
-    aspect-ratio: 9/19.5;
+    aspect-ratio: 9/19;
     object-fit: cover;
+    object-position: top;
 }
 
 .ss-label {

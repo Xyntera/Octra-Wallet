@@ -1,0 +1,52 @@
+backend:
+  name: github
+  repo: Xyntera/Octra-Wallet
+  branch: main
+  base_url: https://octrawallet.com
+  auth_endpoint: api/auth
+
+media_folder: landing/public/assets
+public_folder: /assets
+
+site_url: https://octrawallet.com
+display_url: https://octrawallet.com
+logo_url: https://octrawallet.com/assets/owl-logo.png
+
+collections:
+  - name: blog
+    label: Blog Posts
+    folder: landing/content/blog
+    create: true
+    slug: "{{slug}}"
+    fields:
+      - { label: Title, name: title, widget: string }
+      - { label: Date, name: date, widget: datetime, format: "YYYY-MM-DD" }
+      - { label: Description, name: description, widget: text }
+      - { label: Author, name: author, widget: string, default: Glaqz }
+      - label: Tags
+        name: tags
+        widget: list
+        default: []
+      - { label: Body, name: body, widget: markdown }
+
+  - name: docs
+    label: Documentation
+    folder: landing/content/docs
+    create: true
+    slug: "{{slug}}"
+    fields:
+      - { label: Title, name: title, widget: string }
+      - { label: Description, name: description, widget: text, required: false }
+      - { label: Section, name: section, widget: string, default: General }
+      - { label: Order, name: order, widget: number, default: 99 }
+      - { label: Body, name: body, widget: markdown }
+
+  - name: changelog
+    label: Changelog
+    folder: landing/content/changelog
+    create: true
+    slug: "{{version}}"
+    fields:
+      - { label: Version, name: version, widget: string }
+      - { label: Date, name: date, widget: datetime, format: "YYYY-MM-DD" }
+      - { label: Body, name: body, widget: markdown }

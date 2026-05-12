@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://octrawallet.app/sitemap.xml
+Sitemap: https://octrawallet.com/sitemap.xml

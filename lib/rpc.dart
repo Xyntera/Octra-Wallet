@@ -318,6 +318,15 @@ class RpcClient {
     return const [];
   }
 
+  Future<List<dynamic>> tokensByAddressRpc(String walletAddress) async {
+    final res = await rpcCall('octra_tokensByAddress', [walletAddress],
+        timeoutSeconds: 15);
+    final body = rpcResult(res);
+    if (body is Map && body['tokens'] is List) return body['tokens'] as List;
+    if (body is List) return body;
+    return const [];
+  }
+
   Future<dynamic> contractStorageRpc(String address, String key) async {
     final res = await rpcCall('octra_contractStorage', [address, key],
         timeoutSeconds: 15);

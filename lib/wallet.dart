@@ -794,28 +794,37 @@ class WalletController extends ChangeNotifier {
     if (wallet == null) return const [];
 
     final custom = await _customTokenAddresses(wallet);
-    final detected = <String>{};
     final loaded = <Map<String, dynamic>>[];
+    final foundAddresses = <String>{};
 
     try {
-      final contracts = await rpc.listContractsRpc();
-      for (final item in contracts) {
-        if (item is Map && item['address'] != null) {
-          detected.add(item['address'].toString());
-        }
+      final tokenList = await rpc.tokensByAddressRpc(wallet.address);
+      for (final item in tokenList) {
+        if (item is! Map) continue;
+        final address = item['address']?.toString() ?? '';
+        if (address.isEmpty) continue;
+        foundAddresses.add(address);
+        final symbol = item['symbol']?.toString() ?? '';
+        loaded.add({
+          'address': address,
+          'symbol': symbol.length > 10 ? symbol.substring(0, 10) : symbol,
+          'name': (item['name']?.toString().isNotEmpty ?? false)
+              ? item['name'].toString()
+              : symbol,
+          'decimals': item['decimals']?.toString() ?? '0',
+          'total_supply': item['total_supply']?.toString() ?? '0',
+          'balance': item['balance']?.toString() ?? '0',
+        });
       }
     } catch (e) {
-      print("Token contract list error: $e");
+      print("Token list error: $e");
     }
 
-    final addresses = {...custom, ...detected}.where((addr) => addr.isNotEmpty);
-    for (final address in addresses) {
+    // Load custom-pinned tokens not returned by octra_tokensByAddress (zero balance)
+    for (final address in custom) {
+      if (foundAddresses.contains(address) || address.isEmpty) continue;
       final token = await _loadToken(address, wallet.address);
-      if (token == null) continue;
-      final balance = token['balance']?.toString() ?? '0';
-      if (custom.contains(address) || balance != '0') {
-        loaded.add(token);
-      }
+      if (token != null) loaded.add(token);
     }
 
     tokens = loaded;

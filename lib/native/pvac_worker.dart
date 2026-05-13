@@ -112,18 +112,11 @@ class PvacWorker {
     });
   }
 
-  // Timeout starts when compute *begins*, not when the task is enqueued,
-  // so queue wait time does not eat into the budget.
-  Future<Map<String, dynamic>> _enqueue(
-    Map<String, dynamic> payload, {
-    Duration timeout = const Duration(seconds: 300),
-  }) {
+  Future<Map<String, dynamic>> _enqueue(Map<String, dynamic> payload) {
     final completer = Completer<Map<String, dynamic>>();
     _tail = _tail.catchError((_) {}).then((_) async {
       try {
-        completer.complete(
-          await compute(_executePvac, payload).timeout(timeout),
-        );
+        completer.complete(await compute(_executePvac, payload));
       } catch (error, stackTrace) {
         completer.completeError(error, stackTrace);
       }

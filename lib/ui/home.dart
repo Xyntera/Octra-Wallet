@@ -783,6 +783,7 @@ class _DashboardTabState extends State<DashboardTab> {
   }
 
   void _showWalletsSheet(BuildContext context) {
+    final rootContext = context;
     final walletCtrl = context.read<WalletController>();
     showCupertinoModalPopup(
       context: context,
@@ -817,7 +818,7 @@ class _DashboardTabState extends State<DashboardTab> {
                     return CupertinoButton(
                       onPressed: () {
                         Navigator.pop(context);
-                        Navigator.of(context, rootNavigator: true).push(
+                        Navigator.of(rootContext, rootNavigator: true).push(
                           CupertinoPageRoute(
                               builder: (_) => const WalletSetupPage()),
                         );
@@ -1742,6 +1743,12 @@ class _TokensSheetState extends State<_TokensSheet> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _importController.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -2269,7 +2276,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
         });
       }
     } else {
-      loading = false;
+      if (mounted) setState(() => loading = false);
     }
   }
 
@@ -2303,7 +2310,8 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: SafeArea(
-        child: Column(
+        child: SingleChildScrollView(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
@@ -2421,6 +2429,7 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
             ],
             const SizedBox(height: 20),
           ],
+        ),
         ),
       ),
     );

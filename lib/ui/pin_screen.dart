@@ -51,8 +51,8 @@ class _PinScreenState extends State<PinScreen> {
         localizedReason: 'Please authenticate to access Octra Wallet',
         options: const AuthenticationOptions(stickyAuth: true),
       );
-      if (didAuthenticate) {
-         Navigator.pop(context, true);
+      if (didAuthenticate && mounted) {
+        Navigator.pop(context, true);
       }
     } catch (e) {
       print(e);
@@ -80,18 +80,20 @@ class _PinScreenState extends State<PinScreen> {
 
   Future<void> _onSubmit() async {
     if (widget.isSettingPin) {
-       Navigator.pop(context, _pin);
+      if (mounted) Navigator.pop(context, _pin);
     } else {
-       final wallet = context.read<WalletController>();
-       if (await wallet.checkPin(_pin)) {
-          Navigator.pop(context, true);
-       } else {
-          HapticFeedback.heavyImpact();
-          setState(() {
-            _pin = "";
-            _shakeKey = UniqueKey();
-          });
-       }
+      final wallet = context.read<WalletController>();
+      final ok = await wallet.checkPin(_pin);
+      if (!mounted) return;
+      if (ok) {
+        Navigator.pop(context, true);
+      } else {
+        HapticFeedback.heavyImpact();
+        setState(() {
+          _pin = "";
+          _shakeKey = UniqueKey();
+        });
+      }
     }
   }
 
@@ -261,18 +263,18 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
                        value: isEnabled,
                        onChanged: (val) async {
                          if (val) {
-                           // Enabling: Set a PIN
                            final res = await Navigator.push(context, CupertinoPageRoute(builder: (_) => const PinScreen(isSettingPin: true)));
                            if (res != null) {
-                             // Pin set successfully, we store it
                              await wallet.setPin(res as String);
                            }
                          } else {
-                           // Disabling
-                           // Ideally ask for PIN to disable, but simple toggle for now
-                           await wallet.setSecurityEnabled(false);
+                           // Require PIN confirmation before disabling security
+                           final res = await Navigator.push(context, CupertinoPageRoute(builder: (_) => const PinScreen(isChecking: true)));
+                           if (res == true) {
+                             await wallet.setSecurityEnabled(false);
+                           }
                          }
-                         setState(() {}); // Refresh UI
+                         if (context.mounted) setState(() {});
                        },
                      ),
                    ),

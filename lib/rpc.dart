@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-const String kBaseUrl = 'https://octra.network';
+const String kBaseUrl = 'http://46.101.86.250:8080';
 const int kTimeoutSeconds = 10;
 const int kMicro = 1000000;
 

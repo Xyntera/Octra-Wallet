@@ -21,9 +21,9 @@ import 'package:http/http.dart' as http;
 class WalletController extends ChangeNotifier {
   final _storage = const FlutterSecureStorage();
 
-  static const String _mainnetRpcUrl = kBaseUrl;
+  static const String _mainnetRpcUrl = 'http://46.101.86.250:8080';
   static const String _mainnetExplorerUrl = 'https://octrascan.io';
-  static const String _devnetRpcUrl = 'https://devnet.octra.com';
+  static const String _devnetRpcUrl = 'http://165.227.225.79:8080';
   static const String _devnetExplorerUrl = 'https://devnet.octrascan.io';
 
   // Security — sync cache populated during init(); async getters for legacy callers

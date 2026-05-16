@@ -305,6 +305,23 @@ class _DashboardTabState extends State<DashboardTab> {
                         GoogleFonts.outfit(color: Colors.white54, fontSize: 13),
                     textAlign: TextAlign.center,
                   ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _buildStatusChip(
+                        icon: CupertinoIcons.globe,
+                        label: walletCtrl.activeNetworkLabelSync,
+                      ),
+                      _buildStatusChip(
+                        icon: Icons.link,
+                        label: Uri.tryParse(walletCtrl.rpcBaseUrlSync)?.host ??
+                            walletCtrl.rpcBaseUrlSync,
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 32),
                   RepaintBoundary(
                     child: Wrap(
@@ -539,6 +556,24 @@ class _DashboardTabState extends State<DashboardTab> {
                                     style: const TextStyle(
                                         color: Colors.white54, fontSize: 13),
                                   ),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      _buildStatusChip(
+                                        icon: CupertinoIcons.globe,
+                                        label: walletCtrl.activeNetworkLabelSync,
+                                      ),
+                                      _buildStatusChip(
+                                        icon: Icons.link,
+                                        label: Uri.tryParse(
+                                                    walletCtrl.rpcBaseUrlSync)
+                                                ?.host ??
+                                            walletCtrl.rpcBaseUrlSync,
+                                      ),
+                                    ],
+                                  ),
                                 ],
                               ),
                             ),
@@ -594,7 +629,7 @@ class _DashboardTabState extends State<DashboardTab> {
                       ),
                     ],
                     _buildMenuItem(
-                        dialogContext, 'Security', CupertinoIcons.shield_fill,
+                        dialogContext, 'Settings', CupertinoIcons.settings,
                         () {
                       Navigator.pop(dialogContext);
                       Navigator.of(rootContext).push(
@@ -2430,9 +2465,14 @@ class _TransactionDetailsSheetState extends State<_TransactionDetailsSheet> {
               SizedBox(
                 width: double.infinity,
                 child: CupertinoButton.filled(
-                  onPressed: () => _openExternalUrl(
-                      'https://octrascan.io/tx.html?hash=$hash'),
-                  child: const Text('View on OctraScan'),
+                  onPressed: () {
+                    final explorerUrl =
+                        displayTx['explorer_url']?.toString().trim() ?? '';
+                    if (explorerUrl.isNotEmpty) {
+                      _openExternalUrl(explorerUrl);
+                    }
+                  },
+                  child: const Text('View on Explorer'),
                 ),
               ),
             ],
@@ -2471,6 +2511,35 @@ Widget _buildDetailRow(BuildContext context, String label, String value) {
         ),
         const SizedBox(width: 8),
         const Icon(CupertinoIcons.doc_on_doc, size: 14, color: Colors.blueGrey),
+      ],
+    ),
+  );
+}
+
+Widget _buildStatusChip({
+  required IconData icon,
+  required String label,
+}) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.06),
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(color: Colors.white10),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 15, color: CupertinoColors.systemBlue),
+        const SizedBox(width: 8),
+        Text(
+          label.isEmpty ? 'Unknown' : label,
+          style: GoogleFonts.outfit(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ],
     ),
   );

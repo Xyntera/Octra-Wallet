@@ -21,6 +21,11 @@ import 'package:http/http.dart' as http;
 class WalletController extends ChangeNotifier {
   final _storage = const FlutterSecureStorage();
 
+  static const String _mainnetRpcUrl = kBaseUrl;
+  static const String _mainnetExplorerUrl = 'https://octrascan.io';
+  static const String _devnetRpcUrl = 'https://devnet.octra.com';
+  static const String _devnetExplorerUrl = 'https://devnet.octrascan.io';
+
   // Security — sync cache populated during init(); async getters for legacy callers
   bool _hasPinCache = false;
   bool _securityEnabledCache = false;
@@ -36,6 +41,24 @@ class WalletController extends ChangeNotifier {
   bool get hasStoredVaultSync => _vaultEncryptedCache || _vaultBlobCache != null;
   bool get vaultProtectedByPinSync =>
       _vaultEncryptedCache && _vaultModeCache == 'pin';
+  String _networkProfileCache = 'mainnet';
+  String _mainnetRpcBaseUrlCache = _mainnetRpcUrl;
+  String _mainnetExplorerBaseUrlCache = _mainnetExplorerUrl;
+  String _devnetRpcBaseUrlCache = _devnetRpcUrl;
+  String _devnetExplorerBaseUrlCache = _devnetExplorerUrl;
+  bool get isDevnetSync => _networkProfileCache == 'devnet';
+  bool get isMainnetSync => _networkProfileCache != 'devnet';
+  String get networkProfileSync => _networkProfileCache;
+  String get activeNetworkLabelSync =>
+      isDevnetSync ? 'Devnet' : 'Mainnet';
+  String get mainnetRpcBaseUrlSync => _mainnetRpcBaseUrlCache;
+  String get mainnetExplorerBaseUrlSync => _mainnetExplorerBaseUrlCache;
+  String get devnetRpcBaseUrlSync => _devnetRpcBaseUrlCache;
+  String get devnetExplorerBaseUrlSync => _devnetExplorerBaseUrlCache;
+  String get rpcBaseUrlSync =>
+      isDevnetSync ? _devnetRpcBaseUrlCache : _mainnetRpcBaseUrlCache;
+  String get explorerBaseUrlSync =>
+      isDevnetSync ? _devnetExplorerBaseUrlCache : _mainnetExplorerBaseUrlCache;
   Future<bool> get hasPin async => _hasPinCache;
   Future<bool> get isSecurityEnabled async => _securityEnabledCache;
 
@@ -45,6 +68,48 @@ class WalletController extends ChangeNotifier {
     final effective = _hasPinCache || enabled;
     await _storage.write(key: 'security_enabled', value: effective.toString());
     _securityEnabledCache = effective;
+    notifyListeners();
+  }
+
+  Future<void> setNetworkProfile(
+    String profile, {
+    String? rpcUrl,
+    String? explorerUrl,
+  }) async {
+    final normalizedProfile = profile == 'devnet' ? 'devnet' : 'mainnet';
+    final nextRpcUrl = (rpcUrl ?? '').trim();
+    final nextExplorerUrl = (explorerUrl ?? '').trim();
+
+    _networkProfileCache = normalizedProfile;
+    if (normalizedProfile == 'devnet') {
+      if (nextRpcUrl.isNotEmpty) {
+        _devnetRpcBaseUrlCache = nextRpcUrl;
+      }
+      if (nextExplorerUrl.isNotEmpty) {
+        _devnetExplorerBaseUrlCache = nextExplorerUrl;
+      }
+    } else {
+      if (nextRpcUrl.isNotEmpty) {
+        _mainnetRpcBaseUrlCache = nextRpcUrl;
+      }
+      if (nextExplorerUrl.isNotEmpty) {
+        _mainnetExplorerBaseUrlCache = nextExplorerUrl;
+      }
+    }
+
+    rpc = RpcClient(baseUrl: rpcBaseUrlSync);
+    await _storage.write(key: 'network_profile', value: _networkProfileCache);
+    await _storage.write(
+        key: 'mainnet_rpc_base_url', value: _mainnetRpcBaseUrlCache);
+    await _storage.write(
+        key: 'mainnet_explorer_base_url', value: _mainnetExplorerBaseUrlCache);
+    await _storage.write(
+        key: 'devnet_rpc_base_url', value: _devnetRpcBaseUrlCache);
+    await _storage.write(
+        key: 'devnet_explorer_base_url', value: _devnetExplorerBaseUrlCache);
+    await _storage.write(key: 'rpc_base_url', value: rpcBaseUrlSync);
+    await _storage.write(
+        key: 'explorer_base_url', value: explorerBaseUrlSync);
     notifyListeners();
   }
 
@@ -111,9 +176,63 @@ class WalletController extends ChangeNotifier {
     final secFuture = _storage.read(key: 'security_enabled');
     final vaultFuture = _storage.read(key: 'wallet_vault');
     final legacyFuture = _storage.read(key: 'wallets');
+    final networkFuture = _storage.read(key: 'network_profile');
+    final mainnetRpcFuture = _storage.read(key: 'mainnet_rpc_base_url');
+    final mainnetExplorerFuture =
+        _storage.read(key: 'mainnet_explorer_base_url');
+    final devnetRpcFuture = _storage.read(key: 'devnet_rpc_base_url');
+    final devnetExplorerFuture =
+        _storage.read(key: 'devnet_explorer_base_url');
+    final legacyRpcFuture = _storage.read(key: 'rpc_base_url');
+    final legacyExplorerFuture = _storage.read(key: 'explorer_base_url');
     _hasPinCache = (await pinFuture) == 'true' || await legacyPinFuture;
     await secFuture;
     _securityEnabledCache = _hasPinCache;
+    _networkProfileCache = (await networkFuture) == 'devnet' ? 'devnet' : 'mainnet';
+    final storedMainnetRpc = (await mainnetRpcFuture)?.trim();
+    final storedMainnetExplorer = (await mainnetExplorerFuture)?.trim();
+    final storedDevnetRpc = (await devnetRpcFuture)?.trim();
+    final storedDevnetExplorer = (await devnetExplorerFuture)?.trim();
+    final legacyRpcUrl = (await legacyRpcFuture)?.trim();
+    final legacyExplorerUrl = (await legacyExplorerFuture)?.trim();
+
+    _mainnetRpcBaseUrlCache =
+        storedMainnetRpc?.isNotEmpty == true ? storedMainnetRpc! : _mainnetRpcUrl;
+    _mainnetExplorerBaseUrlCache = storedMainnetExplorer?.isNotEmpty == true
+        ? storedMainnetExplorer!
+        : _mainnetExplorerUrl;
+    _devnetRpcBaseUrlCache = storedDevnetRpc?.isNotEmpty == true
+        ? storedDevnetRpc!
+        : _devnetRpcUrl;
+    _devnetExplorerBaseUrlCache = storedDevnetExplorer?.isNotEmpty == true
+        ? storedDevnetExplorer!
+        : _devnetExplorerUrl;
+
+    if (legacyRpcUrl?.isNotEmpty == true && storedMainnetRpc == null) {
+      _mainnetRpcBaseUrlCache = legacyRpcUrl!;
+    }
+    if (legacyExplorerUrl?.isNotEmpty == true && storedMainnetExplorer == null) {
+      _mainnetExplorerBaseUrlCache = legacyExplorerUrl!;
+    }
+
+    if (_networkProfileCache == 'devnet') {
+      if (storedDevnetRpc == null && legacyRpcUrl?.isNotEmpty == true) {
+        _devnetRpcBaseUrlCache = legacyRpcUrl!;
+      }
+      if (storedDevnetExplorer == null && legacyExplorerUrl?.isNotEmpty == true) {
+        _devnetExplorerBaseUrlCache = legacyExplorerUrl!;
+      }
+    }
+
+    rpc = RpcClient(baseUrl: rpcBaseUrlSync);
+    await _storage.write(
+        key: 'mainnet_rpc_base_url', value: _mainnetRpcBaseUrlCache);
+    await _storage.write(
+        key: 'mainnet_explorer_base_url', value: _mainnetExplorerBaseUrlCache);
+    await _storage.write(
+        key: 'devnet_rpc_base_url', value: _devnetRpcBaseUrlCache);
+    await _storage.write(
+        key: 'devnet_explorer_base_url', value: _devnetExplorerBaseUrlCache);
     _vaultBlobCache = await vaultFuture;
     _vaultEncryptedCache =
         _vaultBlobCache != null && _vaultBlobCache!.isNotEmpty;
@@ -705,7 +824,7 @@ class WalletController extends ChangeNotifier {
     normalized['amount_label'] = amountLabel;
     normalized['token_symbol'] = tokenSymbol;
     normalized['explorer_url'] =
-        hash.isEmpty ? '' : 'https://octrascan.io/tx.html?hash=$hash';
+        hash.isEmpty ? '' : '${explorerBaseUrlSync}/tx.html?hash=$hash';
     normalized['amount'] =
         _octAmountValue(tx['amount_raw'] ?? tx['amount']).toString();
     return normalized;

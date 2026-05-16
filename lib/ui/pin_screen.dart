@@ -341,6 +341,72 @@ class SecuritySettingsPage extends StatefulWidget {
 }
 
 class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
+  final TextEditingController _rpcController = TextEditingController();
+  final TextEditingController _explorerController = TextEditingController();
+
+  String _selectedProfile = 'mainnet';
+  String _mainnetRpcUrl = '';
+  String _mainnetExplorerUrl = '';
+  String _devnetRpcUrl = '';
+  String _devnetExplorerUrl = '';
+  bool _initialized = false;
+  bool _savingNetwork = false;
+  String? _networkMessage;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    _syncFromWallet(context.read<WalletController>());
+    _initialized = true;
+  }
+
+  @override
+  void dispose() {
+    _rpcController.dispose();
+    _explorerController.dispose();
+    super.dispose();
+  }
+
+  void _syncFromWallet(WalletController wallet) {
+    _selectedProfile = wallet.networkProfileSync;
+    _mainnetRpcUrl = wallet.mainnetRpcBaseUrlSync;
+    _mainnetExplorerUrl = wallet.mainnetExplorerBaseUrlSync;
+    _devnetRpcUrl = wallet.devnetRpcBaseUrlSync;
+    _devnetExplorerUrl = wallet.devnetExplorerBaseUrlSync;
+    _syncControllersForProfile();
+  }
+
+  void _syncControllersForProfile() {
+    final isDevnet = _selectedProfile == 'devnet';
+    _rpcController.text = isDevnet ? _devnetRpcUrl : _mainnetRpcUrl;
+    _explorerController.text = isDevnet ? _devnetExplorerUrl : _mainnetExplorerUrl;
+  }
+
+  void _stashCurrentFields() {
+    final rpcValue = _rpcController.text.trim();
+    final explorerValue = _explorerController.text.trim();
+    if (_selectedProfile == 'devnet') {
+      _devnetRpcUrl = rpcValue;
+      _devnetExplorerUrl = explorerValue;
+    } else {
+      _mainnetRpcUrl = rpcValue;
+      _mainnetExplorerUrl = explorerValue;
+    }
+  }
+
+  void _onProfileChanged(String profile) {
+    if (_selectedProfile == profile) return;
+    setState(() {
+      _stashCurrentFields();
+      _selectedProfile = profile;
+      _syncControllersForProfile();
+      _networkMessage = profile == 'devnet'
+          ? 'Devnet uses its own RPC and explorer settings.'
+          : 'Mainnet uses the production RPC and explorer settings.';
+    });
+  }
+
   Future<void> _changePin(BuildContext context, WalletController wallet) async {
     final verified = await Navigator.of(context, rootNavigator: true).push<bool>(
       CupertinoPageRoute(
@@ -368,6 +434,162 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _applyNetwork(WalletController wallet) async {
+    final rpcUrl = _rpcController.text.trim();
+    final explorerUrl = _explorerController.text.trim();
+
+    if (_selectedProfile == 'devnet' && rpcUrl.isEmpty) {
+      setState(() {
+        _networkMessage = 'Enter a devnet RPC URL before applying devnet.';
+      });
+      return;
+    }
+
+    setState(() {
+      _savingNetwork = true;
+      _networkMessage = null;
+      _stashCurrentFields();
+    });
+
+    try {
+      await wallet.setNetworkProfile(
+        _selectedProfile,
+        rpcUrl: rpcUrl,
+        explorerUrl: explorerUrl,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _syncFromWallet(wallet);
+        _networkMessage =
+            'Saved ${wallet.activeNetworkLabelSync.toLowerCase()} settings.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _networkMessage = 'Unable to save network settings: $e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _savingNetwork = false;
+        });
+      }
+    }
+  }
+
+  Widget _buildSectionCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required List<Widget> children,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF121216),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x55000000),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: CupertinoColors.systemBlue.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon,
+                    color: CupertinoColors.systemBlue, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: GoogleFonts.outfit(
+                        color: Colors.white54,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildField({
+    required String label,
+    required String placeholder,
+    required TextEditingController controller,
+    required String helper,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.outfit(
+            color: Colors.white70,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        CupertinoTextField(
+          controller: controller,
+          placeholder: placeholder,
+          placeholderStyle: const TextStyle(color: Colors.white38),
+          style: const TextStyle(color: Colors.white),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white12),
+          ),
+          onChanged: (_) => setState(() => _networkMessage = null),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          helper,
+          style: GoogleFonts.outfit(
+            color: Colors.white38,
+            fontSize: 12,
+            height: 1.35,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final wallet = context.watch<WalletController>();
@@ -375,45 +597,290 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
     return CupertinoPageScaffold(
       backgroundColor: Colors.black,
       navigationBar: const CupertinoNavigationBar(
-        middle: Text("Security", style: TextStyle(color: Colors.white)),
+        middle: Text("Settings", style: TextStyle(color: Colors.white)),
         backgroundColor: Color(0xCC1C1C1E),
       ),
-      child: ListView(
-        children: [
-          const SizedBox(height: 20),
-          CupertinoListSection.insetGrouped(
-            backgroundColor: const Color(0xFF1C1C1E),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1C1C1E),
-              borderRadius: BorderRadius.circular(12),
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0C1730), Color(0xFF111114)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Security and network control',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'PIN is mandatory, and the active RPC / explorer profile is stored locally on device.',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white60,
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildStatusChip(
+                        icon: CupertinoIcons.lock_fill,
+                        label: 'PIN required',
+                      ),
+                      _buildStatusChip(
+                        icon: CupertinoIcons.globe,
+                        label: wallet.activeNetworkLabelSync,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            children: [
-              CupertinoListTile(
-                title: const Text("PIN Lock", style: TextStyle(color: Colors.white)),
-                subtitle: const Text(
-                  "Always enabled for wallet unlock and sensitive actions",
-                  style: TextStyle(color: Colors.white54),
+            const SizedBox(height: 16),
+            _buildSectionCard(
+              icon: CupertinoIcons.shield_fill,
+              title: 'Security',
+              subtitle: 'Unlock the vault and approve sensitive actions with a PIN.',
+              children: [
+                _buildMenuTile(
+                  title: 'PIN Lock',
+                  subtitle: 'Always enabled for wallet unlock and protected actions',
+                  trailing: const Icon(
+                    CupertinoIcons.lock_fill,
+                    color: CupertinoColors.systemBlue,
+                  ),
                 ),
-                trailing: const Icon(CupertinoIcons.lock_fill, color: CupertinoColors.systemBlue),
-              ),
-              CupertinoListTile(
-                title: const Text("Change PIN", style: TextStyle(color: Colors.white)),
-                trailing: const Icon(CupertinoIcons.chevron_right, color: Colors.grey),
-                onTap: () => _changePin(context, wallet),
-              ),
-              CupertinoListTile(
-                title: const Text("Lock Now", style: TextStyle(color: Colors.white)),
-                subtitle: const Text(
-                  "Clear decrypted wallet data from memory",
-                  style: TextStyle(color: Colors.white54),
+                const SizedBox(height: 10),
+                _buildActionTile(
+                  title: 'Change PIN',
+                  icon: CupertinoIcons.lock_fill,
+                  onTap: () => _changePin(context, wallet),
                 ),
-                trailing: const Icon(CupertinoIcons.lock_rotation, color: CupertinoColors.systemBlue),
-                onTap: () => _lockNow(wallet),
-              ),
-            ],
-          ),
-        ],
+                const SizedBox(height: 10),
+                _buildActionTile(
+                  title: 'Lock Now',
+                  icon: CupertinoIcons.lock_rotation,
+                  onTap: () => _lockNow(wallet),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildSectionCard(
+              icon: Icons.language,
+              title: 'Network',
+              subtitle: 'Switch between mainnet and devnet, then refresh balances and history.',
+              children: [
+                CupertinoSlidingSegmentedControl<String>(
+                  groupValue: _selectedProfile,
+                  backgroundColor: Colors.white.withValues(alpha: 0.06),
+                  thumbColor: CupertinoColors.systemBlue,
+                  children: const {
+                    'mainnet': Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      child: Text(
+                        'Mainnet',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    'devnet': Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      child: Text(
+                        'Devnet',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  },
+                  onValueChanged: (value) {
+                    if (value == null) return;
+                    _onProfileChanged(value);
+                  },
+                ),
+                const SizedBox(height: 14),
+                _buildField(
+                  label: 'RPC URL',
+                  placeholder: _selectedProfile == 'devnet'
+                      ? 'https://devnet.octra.com'
+                      : 'https://octra.network',
+                  controller: _rpcController,
+                  helper:
+                      'Transactions, balances, history, and contract calls use this endpoint.',
+                ),
+                const SizedBox(height: 14),
+                _buildField(
+                  label: 'Explorer URL',
+                  placeholder: _selectedProfile == 'devnet'
+                      ? 'https://devnet.octrascan.io'
+                      : 'https://octrascan.io',
+                  controller: _explorerController,
+                  helper:
+                      'History links and transaction receipts open here from the app.',
+                ),
+                if (_networkMessage != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.systemBlue.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: CupertinoColors.systemBlue.withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: Text(
+                      _networkMessage!,
+                      style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: CupertinoButton.filled(
+                    onPressed: _savingNetwork ? null : () => _applyNetwork(wallet),
+                    child: _savingNetwork
+                        ? const CupertinoActivityIndicator(color: Colors.white)
+                        : const Text('Apply Network'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
+}
+
+Widget _buildMenuTile({
+  required String title,
+  required String subtitle,
+  required Widget trailing,
+}) {
+  return Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.05),
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: Colors.white10),
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.outfit(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: GoogleFonts.outfit(
+                  color: Colors.white54,
+                  fontSize: 12,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+        trailing,
+      ],
+    ),
+  );
+}
+
+Widget _buildActionTile({
+  required String title,
+  required IconData icon,
+  required VoidCallback onTap,
+}) {
+  return CupertinoButton(
+    padding: EdgeInsets.zero,
+    onPressed: onTap,
+    child: Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(
+        color: CupertinoColors.systemBlue.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: CupertinoColors.systemBlue.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: CupertinoColors.systemBlue, size: 18),
+          const SizedBox(width: 10),
+          Text(
+            title,
+            style: GoogleFonts.outfit(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Spacer(),
+          const Icon(CupertinoIcons.chevron_right,
+              color: Colors.white38, size: 18),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildStatusChip({
+  required IconData icon,
+  required String label,
+}) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.06),
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(color: Colors.white10),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 15, color: CupertinoColors.systemBlue),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: GoogleFonts.outfit(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    ),
+  );
 }

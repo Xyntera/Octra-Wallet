@@ -112,7 +112,8 @@ class WalletController extends ChangeNotifier {
     final secVal = await secFuture;
     _securityEnabledCache = secVal == null ? _hasPinCache : secVal == 'true';
     _vaultBlobCache = await vaultFuture;
-    _vaultEncryptedCache = _vaultBlobCache != null && _vaultBlobCache.isNotEmpty;
+    _vaultEncryptedCache =
+        _vaultBlobCache != null && _vaultBlobCache!.isNotEmpty;
     _vaultModeCache = _vaultEncryptedCache
         ? (decodeVaultEnvelope(_vaultBlobCache!)?.mode ?? 'device')
         : null;

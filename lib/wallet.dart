@@ -40,8 +40,11 @@ class WalletController extends ChangeNotifier {
   Future<bool> get isSecurityEnabled async => _securityEnabledCache;
 
   Future<void> setSecurityEnabled(bool enabled) async {
-    await _storage.write(key: 'security_enabled', value: enabled.toString());
-    _securityEnabledCache = enabled;
+    // PIN lock is mandatory; retain the stored flag for compatibility but
+    // never allow security to be disabled while a PIN is configured.
+    final effective = _hasPinCache || enabled;
+    await _storage.write(key: 'security_enabled', value: effective.toString());
+    _securityEnabledCache = effective;
     notifyListeners();
   }
 
@@ -109,8 +112,8 @@ class WalletController extends ChangeNotifier {
     final vaultFuture = _storage.read(key: 'wallet_vault');
     final legacyFuture = _storage.read(key: 'wallets');
     _hasPinCache = (await pinFuture) == 'true' || await legacyPinFuture;
-    final secVal = await secFuture;
-    _securityEnabledCache = secVal == null ? _hasPinCache : secVal == 'true';
+    await secFuture;
+    _securityEnabledCache = _hasPinCache;
     _vaultBlobCache = await vaultFuture;
     _vaultEncryptedCache =
         _vaultBlobCache != null && _vaultBlobCache!.isNotEmpty;
@@ -298,7 +301,7 @@ class WalletController extends ChangeNotifier {
     if (saltB64 == null || hashB64 == null || saltB64.isEmpty || hashB64.isEmpty) {
       final legacyPin = await _storage.read(key: 'user_pin');
       if (legacyPin != null) return legacyPin == pin;
-      return !_hasPinCache;
+      return false;
     }
     final digest = crypto_hash.sha256.convert(utf8.encode(
       '$saltB64|$pin',

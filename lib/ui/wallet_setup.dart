@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../wallet.dart';
 import 'home.dart';
 import 'success_animation.dart';
+import 'pin_screen.dart';
 
 class WalletSetupPage extends StatefulWidget {
   const WalletSetupPage({super.key});
@@ -112,6 +113,24 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
                                         data['address']!,
                                         data['privateKeyBase64']!,
                                         data['mnemonic']);
+
+                                    if (!wallet.hasPinSync) {
+                                      final pin = await Navigator.of(context)
+                                          .push<String>(
+                                        CupertinoPageRoute(
+                                          fullscreenDialog: true,
+                                          builder: (_) => const PinScreen(
+                                              isSettingPin: true),
+                                        ),
+                                      );
+                                      if (pin == null || pin.length < 4) {
+                                        if (mounted) {
+                                          setState(() => _isLoading = false);
+                                        }
+                                        return;
+                                      }
+                                      await wallet.setPin(pin);
+                                    }
 
                                     if (!mounted) return;
                                     // Success Animation
@@ -303,6 +322,24 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
                           await context
                               .read<WalletController>()
                               .addWallet(address, privKey, mnemonic);
+
+                          final wallet = context.read<WalletController>();
+                          if (!wallet.hasPinSync) {
+                            final pin = await Navigator.of(context).push<String>(
+                              CupertinoPageRoute(
+                                fullscreenDialog: true,
+                                builder: (_) =>
+                                    const PinScreen(isSettingPin: true),
+                              ),
+                            );
+                            if (pin == null || pin.length < 4) {
+                              if (mounted) {
+                                setState(() => _isLoading = false);
+                              }
+                              return;
+                            }
+                            await wallet.setPin(pin);
+                          }
 
                           if (!mounted) return;
                           await Navigator.of(context).push(PageRouteBuilder(

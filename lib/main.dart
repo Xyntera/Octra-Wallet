@@ -88,15 +88,29 @@ class _StartupCheckState extends State<StartupCheck> {
   Future<void> _checkSecurity() async {
     final wallet = context.read<WalletController>();
 
-    if (wallet.hasStoredVaultSync && wallet.hasPinSync) {
-      final bool? success = await Navigator.of(context).push(
-        CupertinoPageRoute(
+    if (wallet.hasWallet) {
+      if (!wallet.hasPinSync) {
+        final String? pin = await Navigator.of(context).push<String>(
+          CupertinoPageRoute(
             fullscreenDialog: true,
-            builder: (_) => const PinScreen(isChecking: true)),
-      );
-      if (success != true) {
-        _checkSecurity();
-        return;
+            builder: (_) => const PinScreen(isSettingPin: true),
+          ),
+        );
+        if (pin == null || pin.length < 4) {
+          _checkSecurity();
+          return;
+        }
+        await wallet.setPin(pin);
+      } else {
+        final bool? success = await Navigator.of(context).push(
+          CupertinoPageRoute(
+              fullscreenDialog: true,
+              builder: (_) => const PinScreen(isChecking: true)),
+        );
+        if (success != true) {
+          _checkSecurity();
+          return;
+        }
       }
     }
 

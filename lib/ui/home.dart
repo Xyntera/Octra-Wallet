@@ -26,10 +26,19 @@ const int _octMicro = 1000000;
 
 Future<bool> _confirmWalletAction(BuildContext context) async {
   final wallet = context.read<WalletController>();
-  final securityEnabled = await wallet.isSecurityEnabled;
-  final hasPin = await wallet.hasPin;
-  if (!securityEnabled || !hasPin) return true;
   if (!context.mounted) return false;
+
+  if (!wallet.hasPinSync) {
+    final String? pin = await Navigator.of(context, rootNavigator: true).push<String>(
+      CupertinoPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => const PinScreen(isSettingPin: true),
+      ),
+    );
+    if (pin == null || pin.length < 4) return false;
+    await wallet.setPin(pin);
+    return true;
+  }
 
   final result = await Navigator.of(context, rootNavigator: true).push<bool>(
     CupertinoPageRoute(

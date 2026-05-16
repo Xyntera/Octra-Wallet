@@ -141,124 +141,203 @@ class _PinScreenState extends State<PinScreen> {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Color(0xFF061229), Color(0xFF000000)],
+                colors: [Color(0xFF03057C), Color(0xFF000000)],
               ),
             ),
-            child: Column(
-              children: [
-                const SizedBox(height: 56),
-                Container(
-                  width: 92,
-                  height: 92,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.06),
-                    border: Border.all(color: CupertinoColors.systemBlue.withValues(alpha: 0.35)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: CupertinoColors.systemBlue.withValues(alpha: 0.18),
-                        blurRadius: 26,
-                        spreadRadius: 4,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    CupertinoIcons.lock_shield_fill,
-                    size: 44,
-                    color: CupertinoColors.systemBlue,
-                  )
-                      .animate(onPlay: (controller) => controller.repeat(reverse: true))
-                      .scale(begin: const Offset(0.92, 0.92), end: const Offset(1.0, 1.0), duration: 1400.ms, curve: Curves.easeInOut),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  _titleText,
-                  style: GoogleFonts.outfit(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(
-                    _subtitleText,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.outfit(
-                      color: Colors.white70,
-                      fontSize: 15,
-                      height: 1.35,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight - 48,
+                    ),
+                    child: Column(
+                      children: [
+                        _buildHeaderCard(),
+                        const SizedBox(height: 16),
+                        _buildPinCard(),
+                      ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 28),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(_pinLength, (index) {
-                    final filled = index < _enteredPin.length;
-                    return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 10),
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: filled
-                            ? CupertinoColors.systemBlue
-                            : CupertinoColors.systemGrey.withValues(alpha: 0.25),
-                        boxShadow: filled
-                            ? [
-                                BoxShadow(
-                                  color: CupertinoColors.systemBlue.withValues(alpha: 0.4),
-                                  blurRadius: 12,
-                                ),
-                              ]
-                            : null,
-                      ),
-                    );
-                  }),
-                )
-                    .animate(key: _shakeKey)
-                    .shake(duration: 420.ms, hz: 4, offset: const Offset(6, 0)),
-                const SizedBox(height: 18),
-                AnimatedSwitcher(
-                  duration: 220.ms,
-                  child: _errorText == null
-                      ? Text(
-                          widget.isSettingPin && _awaitingConfirmation
-                              ? 'Re-enter the same PIN'
-                              : ' ',
-                          key: const ValueKey('hint'),
-                          style: GoogleFonts.outfit(
-                            color: Colors.white54,
-                            fontSize: 13,
-                          ),
-                        )
-                      : Text(
-                          _errorText!,
-                          key: const ValueKey('error'),
-                          style: GoogleFonts.outfit(
-                            color: CupertinoColors.systemRed,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                ),
-                const Spacer(),
-                _buildNumpad(),
-                const SizedBox(height: 18),
-                Text(
-                  'PIN lock is mandatory on this wallet.',
-                  style: GoogleFonts.outfit(
-                    color: Colors.white38,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 22),
-              ],
+                );
+              },
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1C1C1E),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: Colors.white12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 88,
+            height: 88,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.06),
+              border: Border.all(
+                color: CupertinoColors.systemBlue.withValues(alpha: 0.32),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: CupertinoColors.systemBlue.withValues(alpha: 0.16),
+                  blurRadius: 24,
+                  spreadRadius: 3,
+                ),
+              ],
+            ),
+            child: const Icon(
+              CupertinoIcons.lock_shield_fill,
+              size: 42,
+              color: CupertinoColors.systemBlue,
+            )
+                .animate(onPlay: (controller) => controller.repeat(reverse: true))
+                .scale(
+                  begin: const Offset(0.92, 0.92),
+                  end: const Offset(1.0, 1.0),
+                  duration: 1400.ms,
+                  curve: Curves.easeInOut,
+                ),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            _titleText,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.outfit(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _subtitleText,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.outfit(
+              color: Colors.white70,
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              _buildStatusChip(
+                icon: CupertinoIcons.lock_fill,
+                label: 'PIN locked',
+              ),
+              _buildStatusChip(
+                icon: CupertinoIcons.shield_fill,
+                label: widget.isSettingPin ? 'Setup mode' : 'Unlock mode',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPinCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
+      decoration: BoxDecoration(
+        color: const Color(0xFF121216),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: Colors.white12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x55000000),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(_pinLength, (index) {
+              final filled = index < _enteredPin.length;
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 10),
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: filled
+                      ? CupertinoColors.systemBlue
+                      : CupertinoColors.systemGrey.withValues(alpha: 0.22),
+                  boxShadow: filled
+                      ? [
+                          BoxShadow(
+                            color: CupertinoColors.systemBlue.withValues(alpha: 0.35),
+                            blurRadius: 12,
+                          ),
+                        ]
+                      : null,
+                ),
+              );
+            }),
+          )
+              .animate(key: _shakeKey)
+              .shake(duration: 420.ms, hz: 4, offset: const Offset(6, 0)),
+          const SizedBox(height: 18),
+          AnimatedSwitcher(
+            duration: 220.ms,
+            child: _errorText == null
+                ? Text(
+                    widget.isSettingPin && _awaitingConfirmation
+                        ? 'Re-enter the same PIN'
+                        : ' ',
+                    key: const ValueKey('hint'),
+                    style: GoogleFonts.outfit(
+                      color: Colors.white54,
+                      fontSize: 13,
+                    ),
+                  )
+                : Text(
+                    _errorText!,
+                    key: const ValueKey('error'),
+                    style: GoogleFonts.outfit(
+                      color: CupertinoColors.systemRed,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 20),
+          _buildNumpad(),
+          const SizedBox(height: 14),
+          Text(
+            'PIN lock is mandatory on this wallet.',
+            style: GoogleFonts.outfit(
+              color: Colors.white38,
+              fontSize: 12,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -305,7 +384,7 @@ class _PinScreenState extends State<PinScreen> {
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
       child: Column(
         children: [
           Row(

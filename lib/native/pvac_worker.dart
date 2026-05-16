@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:math';
-import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
 
 import 'octra_core_bridge.dart';
 
@@ -138,8 +139,13 @@ class PvacWorker {
     final task = _queue.removeAt(0);
     var finished = false;
     Timer? timer;
+    Isolate? isolate;
+    final responsePort = ReceivePort();
+    StreamSubscription? subscription;
 
     void completeQueue() {
+      subscription?.cancel();
+      responsePort.close();
       if (_queue.isNotEmpty) {
         _processNext();
       } else {
@@ -158,6 +164,7 @@ class PvacWorker {
           task.completer.completeError(error);
         }
       }
+      isolate?.kill(priority: Isolate.immediate);
       completeQueue();
     }
 
@@ -169,14 +176,45 @@ class PvacWorker {
       );
     });
 
-    compute(_executePvac, task.payload).then((result) {
+    subscription = responsePort.listen((message) {
       if (finished) return;
       finished = true;
       timer?.cancel();
-      if (!task.completer.isCompleted) {
-        task.completer.complete(result);
+      isolate?.kill(priority: Isolate.immediate);
+      if (message is Map && message['ok'] == true) {
+        if (!task.completer.isCompleted) {
+          task.completer.complete(Map<String, dynamic>.from(message));
+        }
+      } else {
+        final error = message is Map
+            ? (message['error'] ?? 'PVAC operation failed').toString()
+            : 'PVAC operation failed';
+        final stack = message is Map && message['stack'] != null
+            ? StackTrace.fromString(message['stack'].toString())
+            : null;
+        if (!task.completer.isCompleted) {
+          if (stack != null) {
+            task.completer.completeError(StateError(error), stack);
+          } else {
+            task.completer.completeError(StateError(error));
+          }
+        }
       }
       completeQueue();
+    });
+
+    Isolate.spawn<Map<String, dynamic>>(
+      _executePvacIsolate,
+      {
+        'payload': task.payload,
+        'sendPort': responsePort.sendPort,
+      },
+    ).then((spawned) {
+      if (finished) {
+        spawned.kill(priority: Isolate.immediate);
+        return;
+      }
+      isolate = spawned;
     }).catchError((error, stackTrace) {
       finishWithError(error, stackTrace);
     });
@@ -217,4 +255,20 @@ Future<Map<String, dynamic>> _executePvac(Map<String, dynamic> payload) async {
     throw StateError((result['error'] ?? 'PVAC operation failed').toString());
   }
   return result;
+}
+
+void _executePvacIsolate(Map<String, dynamic> message) async {
+  try {
+    final payload = Map<String, dynamic>.from(message['payload'] as Map);
+    final sendPort = message['sendPort'] as SendPort;
+    final result = await _executePvac(payload);
+    sendPort.send(result);
+  } catch (error, stackTrace) {
+    final sendPort = message['sendPort'] as SendPort;
+    sendPort.send({
+      'ok': false,
+      'error': error.toString(),
+      'stack': stackTrace.toString(),
+    });
+  }
 }

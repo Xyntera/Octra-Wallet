@@ -89,8 +89,7 @@ Future<bool> _confirmFeeAndSecurity(
     ),
   );
   if (confirmed != true) return false;
-  if (!context.mounted) return false;
-  return _confirmWalletAction(context);
+  return true;
 }
 
 Future<void> _openExternalUrl(String url) async {

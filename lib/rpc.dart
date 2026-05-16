@@ -12,6 +12,10 @@ class RpcClient {
 
   RpcClient({this.baseUrl = kBaseUrl}) : _client = http.Client();
 
+  void close() {
+    _client.close();
+  }
+
   /// Basic Request
   Future<RpcResponse> req(String method, String path, {dynamic data}) async {
     final url = Uri.parse('$baseUrl$path');

@@ -79,6 +79,7 @@ class WalletController extends ChangeNotifier {
     final normalizedProfile = profile == 'devnet' ? 'devnet' : 'mainnet';
     final nextRpcUrl = (rpcUrl ?? '').trim();
     final nextExplorerUrl = (explorerUrl ?? '').trim();
+    final previousClient = rpc;
 
     _networkProfileCache = normalizedProfile;
     if (normalizedProfile == 'devnet') {
@@ -110,6 +111,7 @@ class WalletController extends ChangeNotifier {
     await _storage.write(key: 'rpc_base_url', value: rpcBaseUrlSync);
     await _storage.write(
         key: 'explorer_base_url', value: explorerBaseUrlSync);
+    previousClient.close();
     notifyListeners();
   }
 
@@ -264,9 +266,6 @@ class WalletController extends ChangeNotifier {
 
   Future<void> loadWallets() async {
     try {
-      if (_vaultEncryptedCache && _vaultModeCache == 'device' && _hasPinCache && !_vaultUnlockedCache) {
-        return;
-      }
       if (_vaultBlobCache != null && _vaultBlobCache!.isNotEmpty) {
         final envelope = decodeVaultEnvelope(_vaultBlobCache!);
         if (envelope == null) {

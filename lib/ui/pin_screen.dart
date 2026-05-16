@@ -458,6 +458,10 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
         explorerUrl: explorerUrl,
       );
 
+      if (wallet.hasWallet) {
+        await wallet.refresh();
+      }
+
       if (!mounted) return;
       setState(() {
         _syncFromWallet(wallet);

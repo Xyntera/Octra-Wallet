@@ -107,6 +107,9 @@ class _StartupCheckState extends State<StartupCheck> {
               builder: (_) => const PinScreen(isChecking: true)),
         );
         if (success != true) return;
+      }
+
+      if (!wallet.hasWallet) {
         await wallet.loadWallets();
       }
     }

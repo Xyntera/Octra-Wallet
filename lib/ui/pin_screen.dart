@@ -2,7 +2,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:local_auth/local_auth.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import '../wallet.dart';
@@ -21,42 +20,10 @@ class _PinScreenState extends State<PinScreen> {
   String _pin = "";
   final int _pinLength = 4;
   UniqueKey _shakeKey = UniqueKey();
-  final LocalAuthentication auth = LocalAuthentication();
-  bool _canCheckBiometrics = false;
   
   @override
   void initState() {
     super.initState();
-    _checkBiometrics();
-  }
-
-  Future<void> _checkBiometrics() async {
-    try {
-      final bool canAuthenticateWithBiometrics = await auth.canCheckBiometrics;
-      setState(() {
-        _canCheckBiometrics = canAuthenticateWithBiometrics;
-      });
-      if (widget.isChecking && canAuthenticateWithBiometrics) {
-         // Auto trigger for checking
-         _authenticate(); 
-      }
-    } catch (e) {
-      print(e);
-    }
-  }
-
-  Future<void> _authenticate() async {
-    try {
-      final bool didAuthenticate = await auth.authenticate(
-        localizedReason: 'Please authenticate to access Octra Wallet',
-        options: const AuthenticationOptions(stickyAuth: true),
-      );
-      if (didAuthenticate && mounted) {
-        Navigator.pop(context, true);
-      }
-    } catch (e) {
-      print(e);
-    }
   }
 
   void _onKeyPress(String val) {
@@ -132,18 +99,6 @@ class _PinScreenState extends State<PinScreen> {
             // Numpad
             _buildNumpad(),
             const SizedBox(height: 20),
-            if (widget.isChecking && _canCheckBiometrics)
-              CupertinoButton(
-                 child: const Row(
-                   mainAxisSize: MainAxisSize.min,
-                   children: [
-                     Icon(CupertinoIcons.checkmark_shield), 
-                     SizedBox(width: 8), 
-                     Text("Use Biometrics")
-                   ],
-                 ),
-                 onPressed: _authenticate
-              ).animate().fadeIn(),
             const SizedBox(height: 20),
           ],
         ),

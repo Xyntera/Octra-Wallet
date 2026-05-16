@@ -13,6 +13,7 @@ import 'native/pvac_worker.dart';
 import 'rpc.dart';
 import 'models.dart';
 import 'utils/derivation.dart' as crypto_utils;
+import 'utils/vault.dart';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -23,8 +24,18 @@ class WalletController extends ChangeNotifier {
   // Security — sync cache populated during init(); async getters for legacy callers
   bool _hasPinCache = false;
   bool _securityEnabledCache = false;
+  bool _vaultEncryptedCache = false;
+  bool _vaultUnlockedCache = false;
+  String? _vaultModeCache;
+  String? _vaultBlobCache;
+  String? _vaultSaltCache;
+  SecretKey? _vaultKeyCache;
   bool get hasPinSync => _hasPinCache;
   bool get securityEnabledSync => _securityEnabledCache;
+  bool get vaultUnlockedSync => _vaultUnlockedCache;
+  bool get hasStoredVaultSync => _vaultEncryptedCache || _vaultBlobCache != null;
+  bool get vaultProtectedByPinSync =>
+      _vaultEncryptedCache && _vaultModeCache == 'pin';
   Future<bool> get hasPin async => _hasPinCache;
   Future<bool> get isSecurityEnabled async => _securityEnabledCache;
 
@@ -35,15 +46,19 @@ class WalletController extends ChangeNotifier {
   }
 
   Future<void> setPin(String pin) async {
-    await _storage.write(key: 'user_pin', value: pin);
     _hasPinCache = true;
+    await _storage.write(key: 'pin_configured', value: 'true');
+    await _storePinVerifier(pin);
+    await _storage.delete(key: 'user_pin');
     await setSecurityEnabled(true);
+    if (_vaultUnlockedCache) {
+      await _rekeyVaultWithPin(pin);
+    }
     notifyListeners();
   }
 
   Future<bool> checkPin(String pin) async {
-    final stored = await _storage.read(key: 'user_pin');
-    return stored == pin;
+    return unlockVault(pin);
   }
 
   List<Wallet> wallets = [];
@@ -88,51 +103,283 @@ class WalletController extends ChangeNotifier {
 
   /// INITIALIZATION
   Future<void> init() async {
-    final pinFuture = _storage.containsKey(key: 'user_pin');
+    final pinFuture = _storage.read(key: 'pin_configured');
+    final legacyPinFuture = _storage.containsKey(key: 'user_pin');
     final secFuture = _storage.read(key: 'security_enabled');
-    final walletsFuture = loadWallets();
-    _hasPinCache = await pinFuture;
+    final vaultFuture = _storage.read(key: 'wallet_vault');
+    final legacyFuture = _storage.read(key: 'wallets');
+    _hasPinCache = (await pinFuture) == 'true' || await legacyPinFuture;
     final secVal = await secFuture;
     _securityEnabledCache = secVal == null ? _hasPinCache : secVal == 'true';
-    await walletsFuture;
+    _vaultBlobCache = await vaultFuture;
+    _vaultEncryptedCache = _vaultBlobCache != null && _vaultBlobCache.isNotEmpty;
+    _vaultModeCache = _vaultEncryptedCache
+        ? (decodeVaultEnvelope(_vaultBlobCache!)?.mode ?? 'device')
+        : null;
+    _vaultSaltCache = _vaultEncryptedCache
+        ? decodeVaultEnvelope(_vaultBlobCache!)?.saltB64
+        : null;
+    final legacyJson = await legacyFuture;
+    if (!_vaultEncryptedCache && legacyJson != null && legacyJson.isNotEmpty) {
+      final list = jsonDecode(legacyJson) as List<dynamic>;
+      wallets = await _repairWalletList(
+        list
+            .whereType<Map>()
+            .map((e) => Wallet.fromJson(Map<String, dynamic>.from(e)))
+            .toList(),
+      );
+      currentWallet = wallets.isEmpty ? null : wallets.first;
+      await _persistVault(mode: 'device');
+      await _storage.delete(key: 'wallets');
+      if (currentWallet != null) {
+        await _storage.write(key: 'last_selected_wallet', value: currentWallet!.address);
+      }
+    } else if (_vaultEncryptedCache && _vaultModeCache == 'device' && !_hasPinCache) {
+      await loadWallets();
+    }
   }
 
   Future<void> loadWallets() async {
     try {
-      final jsonStr = await _storage.read(key: 'wallets');
-      if (jsonStr != null) {
-        final List<dynamic> list = jsonDecode(jsonStr);
+      if (_vaultEncryptedCache && _vaultModeCache == 'device' && _hasPinCache && !_vaultUnlockedCache) {
+        return;
+      }
+      if (_vaultBlobCache != null && _vaultBlobCache!.isNotEmpty) {
+        final envelope = decodeVaultEnvelope(_vaultBlobCache!);
+        if (envelope == null) {
+          throw StateError('Invalid wallet vault format');
+        }
+        final secretKey = await _resolveVaultKeyForUnlock(envelope);
+        final clear = await decryptTextWithKey(envelope.blobB64, secretKey);
+        final List<dynamic> list = jsonDecode(clear);
         wallets = await _repairWalletList(
           list
               .whereType<Map>()
               .map((e) => Wallet.fromJson(Map<String, dynamic>.from(e)))
               .toList(),
         );
-        await _saveWallets();
+        _vaultUnlockedCache = true;
+        _vaultKeyCache = secretKey;
+        _vaultModeCache = envelope.mode;
+        _vaultSaltCache = envelope.saltB64;
         if (wallets.isNotEmpty) {
-          // Load last selected
           final lastAddr = await _storage.read(key: 'last_selected_wallet');
           if (lastAddr != null && wallets.any((w) => w.address == lastAddr)) {
             currentWallet = wallets.firstWhere((w) => w.address == lastAddr);
           } else {
-            currentWallet = wallets.first; // Default to first
+            currentWallet = wallets.first;
           }
-          refresh(); // Background update (fixes startup lag)
+          refresh();
           registerCurrentPvacInBackground();
         }
+        notifyListeners();
       }
     } catch (e) {
       print("Error loading wallets: $e");
     }
-    notifyListeners();
   }
 
   Future<void> _saveWallets() async {
     try {
-      final jsonStr = jsonEncode(wallets.map((w) => w.toJson()).toList());
-      await _storage.write(key: 'wallets', value: jsonStr);
+      if (!_vaultUnlockedCache || _vaultKeyCache == null) {
+        if (_vaultBlobCache == null || _vaultBlobCache!.isEmpty) {
+          await _persistVault(mode: 'device');
+          return;
+        }
+        throw StateError('Wallet vault is locked');
+      }
+      await _persistVault();
     } catch (e) {
       print("Error saving wallets: $e");
+    }
+  }
+
+  Future<void> _persistVault({String? mode}) async {
+    final data = jsonEncode(wallets.map((w) => w.toJson()).toList());
+    final effectiveMode = mode ?? _vaultModeCache ?? (_hasPinCache ? 'pin' : 'device');
+    SecretKey key;
+    String? saltB64 = _vaultSaltCache;
+
+    if (effectiveMode == 'pin') {
+      if (saltB64 == null || saltB64.isEmpty) {
+        final salt = randomBytes(16);
+        saltB64 = base64Encode(salt);
+      }
+      if (_vaultKeyCache == null) {
+        throw StateError('Missing in-memory PIN key for vault encryption');
+      }
+      key = _vaultKeyCache!;
+      _vaultModeCache = 'pin';
+      _vaultSaltCache = saltB64;
+      await _storage.delete(key: 'wallet_vault_secret');
+    } else {
+      final secretB64 = await _storage.read(key: 'wallet_vault_secret');
+      final secret = secretB64 == null || secretB64.isEmpty
+          ? randomBytes(32)
+          : base64Decode(secretB64);
+      if (secretB64 == null || secretB64.isEmpty) {
+        await _storage.write(
+          key: 'wallet_vault_secret',
+          value: base64Encode(secret),
+        );
+      }
+      key = SecretKey(secret);
+      _vaultModeCache = 'device';
+      _vaultSaltCache = null;
+    }
+
+    final blobB64 = await encryptTextWithKey(data, key);
+    final envelope = WalletVaultEnvelope(
+      version: 1,
+      mode: _vaultModeCache ?? effectiveMode,
+      blobB64: blobB64,
+      saltB64: _vaultSaltCache,
+    );
+    _vaultBlobCache = encodeVaultEnvelope(envelope);
+    _vaultEncryptedCache = true;
+    _vaultKeyCache = key;
+    _vaultUnlockedCache = true;
+    await _storage.write(key: 'wallet_vault', value: _vaultBlobCache);
+  }
+
+  Future<SecretKey> _resolveVaultKeyForUnlock(WalletVaultEnvelope envelope) async {
+    if (envelope.mode == 'pin') {
+      final saltB64 = envelope.saltB64;
+      if (saltB64 == null || saltB64.isEmpty) {
+        throw StateError('Missing vault salt');
+      }
+      throw StateError('Pin required to unlock vault');
+    }
+    final secretB64 = await _storage.read(key: 'wallet_vault_secret');
+    if (secretB64 == null || secretB64.isEmpty) {
+      throw StateError('Missing device vault secret');
+    }
+    return SecretKey(base64Decode(secretB64));
+  }
+
+  Future<void> lockVault() async {
+    if (!_vaultEncryptedCache) return;
+    _vaultUnlockedCache = false;
+    _vaultKeyCache = null;
+    currentWallet = null;
+    wallets = [];
+    nonce = 0;
+    publicBalance = 0.0;
+    encryptedBalance = 0.0;
+    encryptedRaw = 0;
+    pendingPrivateTransfers = [];
+    history = [];
+    tokens = [];
+    notifyListeners();
+  }
+
+  Future<void> _rekeyVaultWithPin(String pin) async {
+    if (wallets.isEmpty && _vaultBlobCache == null) return;
+    final salt = randomBytes(16);
+    _vaultSaltCache = base64Encode(salt);
+    _vaultModeCache = 'pin';
+    _vaultKeyCache = await deriveVaultKeyFromPin(pin, salt);
+    await _persistVault(mode: 'pin');
+  }
+
+  Future<void> _storePinVerifier(String pin) async {
+    final salt = randomBytes(16);
+    final digest = crypto_hash.sha256.convert(utf8.encode(
+      '${base64Encode(salt)}|$pin',
+    ));
+    await _storage.write(key: 'pin_verifier_salt', value: base64Encode(salt));
+    await _storage.write(key: 'pin_verifier_hash', value: base64Encode(digest.bytes));
+  }
+
+  Future<bool> _checkPinVerifier(String pin) async {
+    final saltB64 = await _storage.read(key: 'pin_verifier_salt');
+    final hashB64 = await _storage.read(key: 'pin_verifier_hash');
+    if (saltB64 == null || hashB64 == null || saltB64.isEmpty || hashB64.isEmpty) {
+      final legacyPin = await _storage.read(key: 'user_pin');
+      if (legacyPin != null) return legacyPin == pin;
+      return !_hasPinCache;
+    }
+    final digest = crypto_hash.sha256.convert(utf8.encode(
+      '$saltB64|$pin',
+    ));
+    return base64Encode(digest.bytes) == hashB64;
+  }
+
+  Future<bool> unlockVault(String pin) async {
+    try {
+      if (!await _checkPinVerifier(pin)) {
+        return false;
+      }
+      final hasLegacyPin = await _storage.containsKey(key: 'user_pin');
+      final hasVerifier =
+          await _storage.containsKey(key: 'pin_verifier_hash') &&
+          await _storage.containsKey(key: 'pin_verifier_salt');
+      if (hasLegacyPin && !hasVerifier) {
+        await _storePinVerifier(pin);
+        await _storage.delete(key: 'user_pin');
+      }
+      if (_vaultBlobCache == null || _vaultBlobCache!.isEmpty) {
+        final legacyJson = await _storage.read(key: 'wallets');
+        if (legacyJson == null || legacyJson.isEmpty) {
+          return true;
+        }
+        final List<dynamic> list = jsonDecode(legacyJson);
+        wallets = await _repairWalletList(
+          list
+              .whereType<Map>()
+              .map((e) => Wallet.fromJson(Map<String, dynamic>.from(e)))
+              .toList(),
+        );
+        currentWallet = wallets.isEmpty ? null : wallets.first;
+        _vaultModeCache = 'pin';
+        _vaultSaltCache ??= base64Encode(randomBytes(16));
+        _vaultKeyCache = await deriveVaultKeyFromPin(pin, base64Decode(_vaultSaltCache!));
+        await _persistVault(mode: 'pin');
+        await _storage.delete(key: 'wallets');
+        return true;
+      }
+
+      final envelope = decodeVaultEnvelope(_vaultBlobCache!);
+      if (envelope == null) {
+        return false;
+      }
+      late final SecretKey secretKey;
+      if (envelope.mode == 'pin') {
+        if (envelope.saltB64 == null || envelope.saltB64!.isEmpty) {
+          return false;
+        }
+        secretKey = await deriveVaultKeyFromPin(pin, base64Decode(envelope.saltB64!));
+      } else {
+        secretKey = await _resolveVaultKeyForUnlock(envelope);
+      }
+      final clear = await decryptTextWithKey(envelope.blobB64, secretKey);
+      final List<dynamic> list = jsonDecode(clear);
+      wallets = await _repairWalletList(
+        list
+            .whereType<Map>()
+            .map((e) => Wallet.fromJson(Map<String, dynamic>.from(e)))
+            .toList(),
+      );
+      _vaultUnlockedCache = true;
+      _vaultKeyCache = secretKey;
+      _vaultModeCache = envelope.mode;
+      _vaultSaltCache = envelope.saltB64;
+      if (envelope.mode == 'device' && _hasPinCache) {
+        await _rekeyVaultWithPin(pin);
+      }
+      if (wallets.isNotEmpty) {
+        final lastAddr = await _storage.read(key: 'last_selected_wallet');
+        if (lastAddr != null && wallets.any((w) => w.address == lastAddr)) {
+          currentWallet = wallets.firstWhere((w) => w.address == lastAddr);
+        } else {
+          currentWallet = wallets.first;
+        }
+      }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      print("Vault unlock error: $e");
+      return false;
     }
   }
 
@@ -690,6 +937,29 @@ class WalletController extends ChangeNotifier {
     }
   }
 
+  Future<T> _runTimedStage<T>(
+    String stage,
+    Future<T> Function() task, {
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    final sw = Stopwatch()..start();
+    try {
+      final result = await task().timeout(
+        timeout,
+        onTimeout: () {
+          throw TimeoutException(
+            '$stage timed out after ${timeout.inSeconds} seconds',
+          );
+        },
+      );
+      print('$stage completed in ${sw.elapsedMilliseconds} ms');
+      return result;
+    } catch (e) {
+      print('$stage failed after ${sw.elapsedMilliseconds} ms: $e');
+      rethrow;
+    }
+  }
+
   /// SEND TRANSACTION
   Future<RpcResponse> sendTransaction(
       String to, double amount, String? msg) async {
@@ -998,7 +1268,8 @@ class WalletController extends ChangeNotifier {
     if (currentWallet == null) return RpcResponse(0, "No wallet", null);
     final wallet = currentWallet!;
 
-    await refresh();
+    await _runTimedStage('Refreshing wallet state', refresh,
+        timeout: const Duration(seconds: 90));
     final amountRaw = (amount * 1000000).toInt();
     if (amountRaw <= 0) return RpcResponse(0, "Invalid amount", null);
     if (encryptedRaw < amountRaw) {
@@ -1008,31 +1279,47 @@ class WalletController extends ChangeNotifier {
       return RpcResponse(0, "Native PVAC core is not available", null);
     }
 
-    final toPubKey = await rpc.getPublicKey(toAddr);
+    final toPubKey = await _runTimedStage(
+      'Fetching recipient public key',
+      () => rpc.getPublicKey(toAddr),
+      timeout: const Duration(seconds: 30),
+    );
     if (toPubKey == null || toPubKey.isEmpty) {
       return RpcResponse(0, "Recipient public key not found", null);
     }
 
-    final cipher = await _fetchEncryptedCipher(wallet);
+    final cipher = await _runTimedStage(
+      'Loading encrypted balance cipher',
+      () => _fetchEncryptedCipher(wallet),
+      timeout: const Duration(seconds: 30),
+    );
     if (cipher == null || cipher == '0') {
       return RpcResponse(0, "No encrypted cipher available", null);
     }
 
-    final registered = await ensurePvacRegistered(wallet: wallet);
+    final registered = await _runTimedStage(
+      'Registering PVAC key',
+      () => ensurePvacRegistered(wallet: wallet),
+      timeout: const Duration(seconds: 90),
+    );
     if (!registered) {
       return RpcResponse(0, "PVAC registration failed", null);
     }
 
-    final stealth = await _runPvacTask(
+    final stealth = await _runTimedStage(
       'Preparing stealth transfer',
-      () => pvacWorker.stealthPrepareSend(
-        privateKeyBase64: wallet.privateKeyBase64,
-        recipientAddress: toAddr,
-        recipientPublicKeyBase64: toPubKey,
-        amountRaw: amountRaw,
-        currentCipher: cipher,
-        currentBalanceRaw: encryptedRaw,
+      () => _runPvacTask(
+        'Preparing stealth transfer',
+        () => pvacWorker.stealthPrepareSend(
+          privateKeyBase64: wallet.privateKeyBase64,
+          recipientAddress: toAddr,
+          recipientPublicKeyBase64: toPubKey,
+          amountRaw: amountRaw,
+          currentCipher: cipher,
+          currentBalanceRaw: encryptedRaw,
+        ),
       ),
+      timeout: const Duration(minutes: 3),
     );
 
     final tx = await _buildPrivacyTx(

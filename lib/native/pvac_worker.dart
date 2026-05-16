@@ -6,7 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'octra_core_bridge.dart';
 
 class PvacWorker {
-  Future<void> _tail = Future.value();
+  final List<_QueuedPvacTask> _queue = [];
+  bool _draining = false;
   final Random _random;
 
   PvacWorker({Random? random}) : _random = random ?? Random.secure();
@@ -17,7 +18,7 @@ class PvacWorker {
     return _enqueue({
       'op': 'register_pubkey',
       'private_key_b64': privateKeyBase64,
-    });
+    }, timeout: const Duration(seconds: 90));
   }
 
   Future<Map<String, dynamic>> fheDecrypt({
@@ -28,7 +29,7 @@ class PvacWorker {
       'op': 'fhe_decrypt',
       'private_key_b64': privateKeyBase64,
       'cipher': cipher,
-    });
+    }, timeout: const Duration(seconds: 45));
   }
 
   Future<Map<String, dynamic>> encryptBalance({
@@ -41,7 +42,7 @@ class PvacWorker {
       'amount_raw': amountRaw.toString(),
       'seed_b64': _randomBase64(32),
       'blinding_b64': _randomBase64(32),
-    });
+    }, timeout: const Duration(minutes: 2));
   }
 
   Future<Map<String, dynamic>> decryptBalance({
@@ -58,7 +59,7 @@ class PvacWorker {
       'current_balance_raw': currentBalanceRaw.toString(),
       'seed_b64': _randomBase64(32),
       'blinding_b64': _randomBase64(32),
-    });
+    }, timeout: const Duration(minutes: 2));
   }
 
   Future<Map<String, dynamic>> stealthPrepareSend({
@@ -80,7 +81,7 @@ class PvacWorker {
       'seed_b64': _randomBase64(32),
       'blinding_b64': _randomBase64(32),
       'ephemeral_private_key_b64': _randomBase64(32),
-    });
+    }, timeout: const Duration(minutes: 3));
   }
 
   Future<Map<String, dynamic>> stealthScanOutputs({
@@ -91,7 +92,7 @@ class PvacWorker {
       'op': 'stealth_scan_outputs',
       'private_key_b64': privateKeyBase64,
       'outputs': outputs,
-    });
+    }, timeout: const Duration(minutes: 2));
   }
 
   Future<Map<String, dynamic>> stealthPrepareClaim({
@@ -109,19 +110,76 @@ class PvacWorker {
       'claim_secret': claimSecret,
       'blinding_b64': blindingBase64,
       'seed_b64': _randomBase64(32),
-    });
+    }, timeout: const Duration(minutes: 2));
   }
 
-  Future<Map<String, dynamic>> _enqueue(Map<String, dynamic> payload) {
+  Future<Map<String, dynamic>> _enqueue(
+    Map<String, dynamic> payload, {
+    required Duration timeout,
+  }) {
     final completer = Completer<Map<String, dynamic>>();
-    _tail = _tail.catchError((_) {}).then((_) async {
-      try {
-        completer.complete(await compute(_executePvac, payload));
-      } catch (error, stackTrace) {
-        completer.completeError(error, stackTrace);
-      }
-    });
+    _queue.add(_QueuedPvacTask(payload: payload, timeout: timeout, completer: completer));
+    _drainQueue();
     return completer.future;
+  }
+
+  void _drainQueue() {
+    if (_draining || _queue.isEmpty) return;
+    _draining = true;
+    _processNext();
+  }
+
+  void _processNext() {
+    if (_queue.isEmpty) {
+      _draining = false;
+      return;
+    }
+
+    final task = _queue.removeAt(0);
+    var finished = false;
+    Timer? timer;
+
+    void completeQueue() {
+      if (_queue.isNotEmpty) {
+        _processNext();
+      } else {
+        _draining = false;
+      }
+    }
+
+    void finishWithError(Object error, [StackTrace? stackTrace]) {
+      if (finished) return;
+      finished = true;
+      timer?.cancel();
+      if (!task.completer.isCompleted) {
+        if (stackTrace != null) {
+          task.completer.completeError(error, stackTrace);
+        } else {
+          task.completer.completeError(error);
+        }
+      }
+      completeQueue();
+    }
+
+    timer = Timer(task.timeout, () {
+      finishWithError(
+        TimeoutException(
+          'PVAC ${task.operation} timed out after ${task.timeout.inSeconds} seconds',
+        ),
+      );
+    });
+
+    compute(_executePvac, task.payload).then((result) {
+      if (finished) return;
+      finished = true;
+      timer?.cancel();
+      if (!task.completer.isCompleted) {
+        task.completer.complete(result);
+      }
+      completeQueue();
+    }).catchError((error, stackTrace) {
+      finishWithError(error, stackTrace);
+    });
   }
 
   String _randomBase64(int length) {
@@ -131,6 +189,20 @@ class PvacWorker {
     }
     return base64Encode(bytes);
   }
+}
+
+class _QueuedPvacTask {
+  final Map<String, dynamic> payload;
+  final Duration timeout;
+  final Completer<Map<String, dynamic>> completer;
+
+  _QueuedPvacTask({
+    required this.payload,
+    required this.timeout,
+    required this.completer,
+  });
+
+  String get operation => payload['op']?.toString() ?? 'pvac_operation';
 }
 
 Future<Map<String, dynamic>> _executePvac(Map<String, dynamic> payload) async {

@@ -88,7 +88,7 @@ class _StartupCheckState extends State<StartupCheck> {
   Future<void> _checkSecurity() async {
     final wallet = context.read<WalletController>();
 
-    if (wallet.hasPinSync && wallet.securityEnabledSync) {
+    if (wallet.hasStoredVaultSync && wallet.hasPinSync) {
       final bool? success = await Navigator.of(context).push(
         CupertinoPageRoute(
             fullscreenDialog: true,

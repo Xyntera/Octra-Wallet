@@ -1,0 +1,164 @@
+name: Flutter Desktop
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "landing/**"
+      - "docs/**"
+      - "*.md"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/pull_request_template.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-desktop:
+    name: Linux desktop (x64)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang cmake ninja-build pkg-config \
+            libgtk-3-dev libsecret-1-dev libssl-dev python3
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build native PVAC core (portable)
+        run: native/cpp/build_linux_release.sh
+
+      - name: Smoke test native core
+        run: python3 native/cpp/smoke_test.py native/cpp/target/linux/liboctra_core.so
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Linux app
+        run: flutter build linux --release
+
+      - name: Verify bundled native core
+        run: |
+          test -f build/linux/x64/release/bundle/lib/liboctra_core.so
+          ls -la build/linux/x64/release/bundle build/linux/x64/release/bundle/lib
+
+      - name: Package bundle
+        run: |
+          cd build/linux/x64/release
+          mv bundle octra-wallet
+          tar -czf octra-wallet-linux-x64.tar.gz octra-wallet
+
+      - name: Upload Linux bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: octra-wallet-linux-x64
+          path: build/linux/x64/release/octra-wallet-linux-x64.tar.gz
+
+  windows-desktop:
+    name: Windows desktop (x64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2 (MinGW64 + OpenSSL)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-openssl
+
+      - name: Build native PVAC core DLL
+        shell: msys2 {0}
+        run: ./native/cpp/build_windows_msys2.sh
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Windows app
+        run: flutter build windows --release
+
+      - name: Verify bundled native core
+        shell: pwsh
+        run: |
+          if (!(Test-Path "build/windows/x64/runner/Release/octra_core.dll")) {
+            Write-Error "octra_core.dll missing from bundle"
+            exit 1
+          }
+          Get-ChildItem build/windows/x64/runner/Release
+
+      - name: Package bundle
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows/x64/runner/Release/* `
+            -DestinationPath octra-wallet-windows-x64.zip
+
+      - name: Upload Windows bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: octra-wallet-windows-x64
+          path: octra-wallet-windows-x64.zip
+
+  macos-desktop:
+    name: macOS desktop (arm64)
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install OpenSSL
+        run: brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
+
+      - name: Build native PVAC core dylib
+        run: native/cpp/build_macos.sh
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build macOS app
+        run: flutter build macos --release
+
+      - name: Bundle native core into app and re-sign
+        run: |
+          APP=$(ls -d build/macos/Build/Products/Release/*.app | head -1)
+          echo "App bundle: $APP"
+          mkdir -p "$APP/Contents/Frameworks"
+          cp native/cpp/target/macos/liboctra_core.dylib "$APP/Contents/Frameworks/"
+          codesign --force --sign - "$APP/Contents/Frameworks/liboctra_core.dylib"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep "$APP"
+
+      - name: Package bundle
+        run: |
+          cd build/macos/Build/Products/Release
+          ditto -c -k --sequesterRsrc --keepParent *.app octra-wallet-macos-arm64.zip
+
+      - name: Upload macOS bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: octra-wallet-macos-arm64
+          path: build/macos/Build/Products/Release/octra-wallet-macos-arm64.zip

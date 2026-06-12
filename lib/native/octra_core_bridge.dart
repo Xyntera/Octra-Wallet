@@ -103,16 +103,47 @@ class FfiOctraCoreBridge implements OctraCoreBridge {
       _tryPreload('libcrypto.so');
       return DynamicLibrary.open('liboctra_core.so');
     }
-    if (Platform.isIOS || Platform.isMacOS) {
+    if (Platform.isIOS) {
       return DynamicLibrary.process();
     }
+    if (Platform.isMacOS) {
+      // App bundles ship the dylib in Contents/Frameworks; fall back to the
+      // process image for statically linked builds.
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      return _tryOpenFirst([
+            '$exeDir/../Frameworks/liboctra_core.dylib',
+            '$exeDir/liboctra_core.dylib',
+            'liboctra_core.dylib',
+          ]) ??
+          DynamicLibrary.process();
+    }
     if (Platform.isLinux) {
-      return DynamicLibrary.open('liboctra_core.so');
+      // Flutter bundles place shared libraries in <bundle>/lib next to the
+      // executable; prefer that before the default search path.
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      return _tryOpenFirst([
+            '$exeDir/lib/liboctra_core.so',
+            '$exeDir/liboctra_core.so',
+          ]) ??
+          DynamicLibrary.open('liboctra_core.so');
     }
     if (Platform.isWindows) {
-      return DynamicLibrary.open('octra_core.dll');
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      return _tryOpenFirst(['$exeDir\\octra_core.dll']) ??
+          DynamicLibrary.open('octra_core.dll');
     }
     throw UnsupportedError('Unsupported platform for Octra native core');
+  }
+
+  static DynamicLibrary? _tryOpenFirst(List<String> candidates) {
+    for (final path in candidates) {
+      try {
+        return DynamicLibrary.open(path);
+      } catch (_) {
+        // Fall through to the next candidate.
+      }
+    }
+    return null;
   }
 
   static void _tryPreload(String name) {

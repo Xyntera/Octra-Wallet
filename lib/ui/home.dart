@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart'
@@ -1734,8 +1735,12 @@ class _DashboardTabState extends State<DashboardTab> {
     );
   }
 
-  /// QR-scan affordance for address fields.
-  Widget _scanSuffix(BuildContext context, TextEditingController controller) {
+  /// QR-scan affordance for address fields. Hidden on platforms where the
+  /// camera plugin has no implementation (Windows/Linux desktop).
+  Widget? _scanSuffix(BuildContext context, TextEditingController controller) {
+    if (!(Platform.isAndroid || Platform.isIOS || Platform.isMacOS)) {
+      return null;
+    }
     return CupertinoButton(
       padding: const EdgeInsets.only(right: 8),
       minimumSize: Size.zero,

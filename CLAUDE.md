@@ -24,9 +24,17 @@ flutter test test/path/to/test_file.dart
 flutter build apk --release
 # Output: build/app/outputs/flutter-apk/app-release.apk
 
-# Build Linux desktop (after running setup.sh or manually enabling the platform)
-flutter config --enable-linux-desktop
-flutter build linux --release
+# Build Linux desktop (CI: .github/workflows/flutter-desktop.yml)
+native/cpp/build_linux_release.sh   # portable PVAC core -> native/cpp/target/linux/
+flutter build linux --release       # CMake bundles the .so into bundle/lib/
+
+# Build Windows desktop (run the DLL script from an MSYS2 MinGW64 shell)
+native/cpp/build_windows_msys2.sh   # static octra_core.dll -> native/cpp/target/windows/
+flutter build windows --release     # CMake bundles the DLL next to the exe
+
+# Build macOS desktop
+native/cpp/build_macos.sh           # liboctra_core.dylib -> native/cpp/target/macos/
+flutter build macos --release       # then copy the dylib into <app>/Contents/Frameworks
 
 # Build native C++ library for local host testing (required for PVAC on desktop)
 native/cpp/build_host.sh
@@ -103,7 +111,8 @@ At load time, `WalletController` re-derives the address from the stored private 
 | Platform | Library |
 |---|---|
 | Android | `liboctra_core.so` (with pre-loaded `libc++_shared.so` and `libcrypto.so`) |
-| iOS / macOS | Linked statically; loaded from process image |
+| iOS | Linked statically; loaded from process image |
+| macOS | `liboctra_core.dylib` in `Contents/Frameworks` (falls back to process image) |
 | Linux | `liboctra_core.so` |
 | Windows | `octra_core.dll` |
 

@@ -87,6 +87,17 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     COMPONENT Runtime)
 endif()
 
+# Bundle the Octra PVAC native core when it has been built
+# (native/cpp/build_windows_msys2.sh). Any extra runtime DLLs dropped in
+# the same directory (e.g. libcrypto) are bundled alongside it.
+file(GLOB OCTRA_CORE_WINDOWS_DLLS
+  "${CMAKE_CURRENT_SOURCE_DIR}/../native/cpp/target/windows/*.dll")
+if(OCTRA_CORE_WINDOWS_DLLS)
+  install(FILES ${OCTRA_CORE_WINDOWS_DLLS}
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
+
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"

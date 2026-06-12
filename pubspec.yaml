@@ -35,7 +35,6 @@ dependencies:
   # (Optional but recommended – safe to add later)
   qr_flutter: ^4.1.0
   mobile_scanner: ^5.0.0
-  local_auth: ^2.1.6
   url_launcher: ^6.2.1
 
   fl_chart: ^0.69.0

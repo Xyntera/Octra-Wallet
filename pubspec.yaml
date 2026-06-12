@@ -2,7 +2,7 @@ name: ouqro_wallet
 description: Octra Wallet - Flutter client with a native PVAC wallet-core bridge
 publish_to: "none"
 
-version: 1.0.0+1
+version: 1.1.0+4
 
 environment:
   sdk: ">=3.0.0 <4.0.0"

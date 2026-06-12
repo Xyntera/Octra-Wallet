@@ -1,0 +1,261 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v1.1.0); created on main if it does not exist"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  android:
+    name: Android APK
+    runs-on: ubuntu-24.04
+    env:
+      ANDROID_API: "24"
+      ANDROID_NDK_VERSION: "27.0.12077973"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$ANDROID_NDK_VERSION"
+
+      - name: Build Android OpenSSL
+        env:
+          ANDROID_HOST_TAG: linux-x86_64
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
+          native/cpp/build_android_openssl.sh
+
+      - name: Build Android native core
+        env:
+          ANDROID_HOST_TAG: linux-x86_64
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
+          source native/cpp/target/openssl-android/env.sh
+          native/cpp/build_android.sh
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release --target-platform android-arm64,android-x64
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  linux:
+    name: Linux desktop (x64)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang cmake ninja-build pkg-config \
+            libgtk-3-dev libsecret-1-dev libssl-dev python3
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build native PVAC core (portable)
+        run: native/cpp/build_linux_release.sh
+
+      - name: Smoke test native core
+        run: python3 native/cpp/smoke_test.py native/cpp/target/linux/liboctra_core.so
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Linux app
+        run: flutter build linux --release
+
+      - name: Verify bundled native core
+        run: test -f build/linux/x64/release/bundle/lib/liboctra_core.so
+
+      - name: Package bundle
+        run: |
+          cd build/linux/x64/release
+          mv bundle octra-wallet
+          tar -czf octra-wallet-linux-x64.tar.gz octra-wallet
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: build/linux/x64/release/octra-wallet-linux-x64.tar.gz
+
+  windows:
+    name: Windows desktop (x64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2 (MinGW64 + OpenSSL)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-openssl
+
+      - name: Build native PVAC core DLL
+        shell: msys2 {0}
+        run: ./native/cpp/build_windows_msys2.sh
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Windows app
+        run: flutter build windows --release
+
+      - name: Verify bundled native core
+        shell: pwsh
+        run: |
+          if (!(Test-Path "build/windows/x64/runner/Release/octra_core.dll")) {
+            Write-Error "octra_core.dll missing from bundle"
+            exit 1
+          }
+
+      - name: Package bundle
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows/x64/runner/Release/* `
+            -DestinationPath octra-wallet-windows-x64.zip
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: octra-wallet-windows-x64.zip
+
+  macos:
+    name: macOS desktop (arm64)
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install OpenSSL
+        run: brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
+
+      - name: Build native PVAC core dylib
+        run: native/cpp/build_macos.sh
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build macOS app
+        run: flutter build macos --release
+
+      - name: Bundle native core into app and re-sign
+        run: |
+          APP=$(ls -d build/macos/Build/Products/Release/*.app | head -1)
+          mkdir -p "$APP/Contents/Frameworks"
+          cp native/cpp/target/macos/liboctra_core.dylib "$APP/Contents/Frameworks/"
+          codesign --force --sign - "$APP/Contents/Frameworks/liboctra_core.dylib"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep "$APP"
+
+      - name: Package bundle
+        run: |
+          cd build/macos/Build/Products/Release
+          ditto -c -k --sequesterRsrc --keepParent *.app octra-wallet-macos-arm64.zip
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: build/macos/Build/Products/Release/octra-wallet-macos-arm64.zip
+
+  publish:
+    name: Publish GitHub release
+    runs-on: ubuntu-24.04
+    needs: [android, linux, windows, macos]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Stage versioned assets and checksums
+        run: |
+          TAG="$RELEASE_TAG"
+          mkdir -p dist
+          cp artifacts/release-android/app-release.apk          "dist/Octra-Wallet-$TAG-android.apk"
+          cp artifacts/release-linux/octra-wallet-linux-x64.tar.gz "dist/Octra-Wallet-$TAG-linux-x64.tar.gz"
+          cp artifacts/release-windows/octra-wallet-windows-x64.zip "dist/Octra-Wallet-$TAG-windows-x64.zip"
+          cp artifacts/release-macos/octra-wallet-macos-arm64.zip   "dist/Octra-Wallet-$TAG-macos-arm64.zip"
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Resolve release notes
+        run: |
+          NOTES="docs/release-notes-$RELEASE_TAG.md"
+          if [ -f "$NOTES" ]; then
+            echo "NOTES_PATH=$NOTES" >> "$GITHUB_ENV"
+          else
+            echo "No $NOTES found; release will use auto-generated notes."
+            echo "NOTES_PATH=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.event_name == 'workflow_dispatch' && 'main' || '' }}
+          name: Octra Wallet ${{ env.RELEASE_TAG }}
+          body_path: ${{ env.NOTES_PATH }}
+          generate_release_notes: ${{ env.NOTES_PATH == '' }}
+          files: dist/*

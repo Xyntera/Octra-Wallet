@@ -36,10 +36,13 @@ inline std::vector<int> factor_small(int n) {
 inline void keygen(const Params & prm, PubKey & pk, SecKey & sk) {
     pk.prm = prm;
 
+    if (pk.prm.B == 0)
+        throw std::runtime_error("pvac: keygen: prm.B is zero");
+
     u128 pm1 = (((u128)1) << 127) - 2;
 
     if ((pm1 % (u128)pk.prm.B) != 0) {
-        std::abort();
+        throw std::runtime_error("pvac: keygen: prm.B does not divide pm1");
     }
 
     pk.canon_tag = csprng_u64();
@@ -140,10 +143,13 @@ inline void keygen(const Params & prm, PubKey & pk, SecKey & sk) {
 inline void keygen_from_seed(const Params& prm, PubKey& pk, SecKey& sk, const uint8_t wallet_privkey[32]) {
     pk.prm = prm;
 
+    if (pk.prm.B == 0)
+        throw std::runtime_error("pvac: keygen_from_seed: prm.B is zero");
+
     u128 pm1 = (((u128)1) << 127) - 2;
 
     if ((pm1 % (u128)pk.prm.B) != 0) {
-        std::abort();
+        throw std::runtime_error("pvac: keygen_from_seed: prm.B does not divide pm1");
     }
 
     uint8_t master[32];

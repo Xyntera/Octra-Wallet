@@ -21,7 +21,8 @@ import 'package:http/http.dart' as http;
 class WalletController extends ChangeNotifier {
   final _storage = const FlutterSecureStorage();
 
-  static const String _mainnetRpcUrl = 'http://46.101.86.250:8080';
+  static const String _mainnetRpcUrl = 'https://octra.network';
+  static const String _legacyMainnetRpcUrl = 'http://46.101.86.250:8080';
   static const String _mainnetExplorerUrl = 'https://octrascan.io';
   static const String _devnetRpcUrl = 'http://165.227.225.79:8080';
   static const String _devnetExplorerUrl = 'https://devnet.octrascan.io';
@@ -71,13 +72,20 @@ class WalletController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // webcli retired its plain-HTTP IP default in favor of https://octra.network;
+  // rewrite the old endpoint wherever it was stored or entered.
+  static String _migrateLegacyRpcUrl(String url) {
+    final trimmed = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+    return trimmed == _legacyMainnetRpcUrl ? _mainnetRpcUrl : url;
+  }
+
   Future<void> setNetworkProfile(
     String profile, {
     String? rpcUrl,
     String? explorerUrl,
   }) async {
     final normalizedProfile = profile == 'devnet' ? 'devnet' : 'mainnet';
-    final nextRpcUrl = (rpcUrl ?? '').trim();
+    final nextRpcUrl = _migrateLegacyRpcUrl((rpcUrl ?? '').trim());
     final nextExplorerUrl = (explorerUrl ?? '').trim();
     final previousClient = rpc;
 
@@ -191,11 +199,16 @@ class WalletController extends ChangeNotifier {
     await secFuture;
     _securityEnabledCache = _hasPinCache;
     _networkProfileCache = (await networkFuture) == 'devnet' ? 'devnet' : 'mainnet';
-    final storedMainnetRpc = (await mainnetRpcFuture)?.trim();
+    final rawStoredMainnetRpc = (await mainnetRpcFuture)?.trim();
+    final storedMainnetRpc = rawStoredMainnetRpc == null
+        ? null
+        : _migrateLegacyRpcUrl(rawStoredMainnetRpc);
     final storedMainnetExplorer = (await mainnetExplorerFuture)?.trim();
     final storedDevnetRpc = (await devnetRpcFuture)?.trim();
     final storedDevnetExplorer = (await devnetExplorerFuture)?.trim();
-    final legacyRpcUrl = (await legacyRpcFuture)?.trim();
+    final rawLegacyRpcUrl = (await legacyRpcFuture)?.trim();
+    final legacyRpcUrl =
+        rawLegacyRpcUrl == null ? null : _migrateLegacyRpcUrl(rawLegacyRpcUrl);
     final legacyExplorerUrl = (await legacyExplorerFuture)?.trim();
 
     _mainnetRpcBaseUrlCache =

@@ -280,6 +280,8 @@ inline Cipher ct_neg(const PubKey& pk, const Cipher& A) {
 }
 
 inline Cipher ct_add(const PubKey& pk, const Cipher& A, const Cipher& B) {
+    if (A.slots != B.slots)
+        throw std::runtime_error("pvac: ct_add: slot count mismatch between operands");
     Cipher C;
     C.slots = A.slots;
     C.c0 = A.c0.empty() ? B.c0 : B.c0.empty() ? A.c0 : field::Op::add(A.c0, B.c0);

@@ -1,5 +1,5 @@
 # octra wallet (webcli)
-![Version](https://img.shields.io/badge/version-0.04.10--alpha-blue)
+![Version](https://img.shields.io/badge/version-0.05.01--alpha-blue)
 
 
 a full-fledged web client based on a local server for working with the octra network (compatible with both **DEVNET** and **MAINNET ALPHA**).
@@ -78,8 +78,8 @@ open `http://127.0.0.1:8420` in your browser
 ## launch
 
 0. after opening the web interface in your browser, import your private key or create a new one directly in the modal window
-1. enter a 6 digit PIN code to encrypt (AES 256 GCM) your wallet
-2. your wallet file is stored in `data/wallet.oct`
+1. enter a 6 digit PIN code to encrypt (AES 256 GCM) your wallet 
+2. your wallet file is stored in `data/wallet.oct` 
 3. the PIN is required on every startup to unlock
 
 

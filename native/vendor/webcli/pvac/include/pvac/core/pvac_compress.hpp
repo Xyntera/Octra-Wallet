@@ -1,7 +1,3 @@
-// lambda0xe note:
-// mini public key arith compressor for pub key
-// (17 megabytes packed into 3 megabytes)
-
 #pragma once
 
 #include <cstdint>
@@ -91,7 +87,7 @@ struct RangeEncoder {
     void encode_bit(int bit) {
         uint32_t p = pred.predict();
         uint32_t mid = lo + ((hi - lo) >> 16) * p
-                     + ((hi - lo & 0xffff) * p >> 16);
+                     + (((hi - lo) & 0xffff) * p >> 16);
         if (bit)
             hi = mid;
         else
@@ -144,7 +140,7 @@ struct RangeDecoder {
     int decode_bit() {
         uint32_t p = pred.predict();
         uint32_t mid = lo + ((hi - lo) >> 16) * p
-                     + ((hi - lo & 0xffff) * p >> 16);
+                     + (((hi - lo) & 0xffff) * p >> 16);
         int bit = 0;
         if (code <= mid) {
             bit = 1;
@@ -208,8 +204,11 @@ inline std::vector<uint8_t> unpack(const uint8_t* data, size_t len) {
     std::vector<uint8_t> out;
     out.reserve(orig_sz);
     int b;
-    while ((b = dec.decode_byte_or_eof()) >= 0)
+    while ((b = dec.decode_byte_or_eof()) >= 0) {
+        if (out.size() >= orig_sz)
+            throw std::runtime_error("pvac_compress: output exceeds declared size");
         out.push_back((uint8_t)b);
+    }
     if (out.size() != orig_sz)
         throw std::runtime_error("pvac_compress: size mismatch");
     return out;

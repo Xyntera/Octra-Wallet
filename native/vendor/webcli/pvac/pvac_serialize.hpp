@@ -19,6 +19,7 @@ static constexpr uint8_t TAG_SECKEY = 2;
 static constexpr uint8_t TAG_RANGE_PROOF = 4;
 static constexpr uint8_t TAG_AGG_RANGE_PROOF = 5;
 static constexpr uint8_t TAG_ZERO_PROOF = 6;
+static constexpr uint64_t MAX_BITVEC_BITS = 1ULL << 20;
 
 struct Writer {
     std::vector<uint8_t> buf;
@@ -152,12 +153,20 @@ struct Reader {
     pvac::Scalar scalar() {
         uint8_t b[32];
         raw(b, 32);
-        return pvac::sc_from_bytes(b);
+        pvac::Scalar scalar = pvac::sc_from_bytes(b);
+        if (!failed && !pvac::sc_is_canonical(scalar))
+            fail("pvac_ser: non-canonical scalar encoding");
+        return failed ? pvac::sc_zero() : scalar;
     }
 
     pvac::RistrettoPoint rist_point() {
         pvac::RistrettoPoint pt;
         raw(pt.data(), 32);
+        if (!failed) {
+            pvac::ExtPoint decoded;
+            if (!pvac::rist_decode(decoded, pt))
+                fail("pvac_ser: invalid Ristretto point encoding");
+        }
         return pt;
     }
 
@@ -165,7 +174,12 @@ struct Reader {
         pvac::BitVec bv;
         bv.nbits = u64();
         size_t nw = u64();
+        if (!failed && bv.nbits > MAX_BITVEC_BITS)
+            fail("pvac_ser: bitvec too large");
         check_count(nw, 8);
+        size_t expected_nw = static_cast<size_t>((bv.nbits + 63) / 64);
+        if (!failed && nw != expected_nw)
+            fail("pvac_ser: bitvec word count mismatch");
         if (failed) return bv;
         bv.w.resize(nw);
         for (size_t i = 0; i < nw; ++i) bv.w[i] = u64();
@@ -196,6 +210,49 @@ struct Reader {
         return ver;
     }
 };
+
+inline void validate_cipher_structure(const pvac::Cipher& cipher) {
+    if (cipher.slots == 0)
+        throw std::runtime_error("pvac_ser: cipher slots must be positive");
+    if (!cipher.c0.empty() && cipher.c0.size() != cipher.slots)
+        throw std::runtime_error("pvac_ser: c0/slots size mismatch");
+    for (size_t layer_id = 0; layer_id < cipher.L.size(); ++layer_id) {
+        const auto& layer = cipher.L[layer_id];
+        if (layer.rule != pvac::RRule::BASE && layer.rule != pvac::RRule::PROD)
+            throw std::runtime_error("pvac_ser: invalid layer rule");
+        if (layer.rule == pvac::RRule::PROD &&
+            (layer.pa >= layer_id || layer.pb >= layer_id))
+            throw std::runtime_error("pvac_ser: invalid product parent");
+        if (layer.rule == pvac::RRule::PROD && !layer.PC.empty())
+            throw std::runtime_error("pvac_ser: product layer must not contain PC");
+        if (!layer.PC.empty() && layer.PC.size() != cipher.slots)
+            throw std::runtime_error("pvac_ser: layer PC/slots size mismatch");
+    }
+    for (const auto& edge : cipher.E) {
+        if (edge.layer_id >= cipher.L.size())
+            throw std::runtime_error("pvac_ser: edge layer out of range");
+        if (edge.ch != pvac::SGN_P && edge.ch != pvac::SGN_M)
+            throw std::runtime_error("pvac_ser: invalid edge sign");
+        if (edge.w.size() != cipher.slots)
+            throw std::runtime_error("pvac_ser: edge weight/slots size mismatch");
+    }
+}
+
+inline void validate_pubkey_structure(const pvac::PubKey& pk) {
+    if (pk.prm.B <= 0 || pk.prm.m_bits <= 0 || pk.prm.n_bits <= 0)
+        throw std::runtime_error("pvac_ser: invalid public key dimensions");
+    if (pk.H.size() != static_cast<size_t>(pk.prm.n_bits))
+        throw std::runtime_error("pvac_ser: H column count mismatch");
+    if (pk.ubk.perm.size() != static_cast<size_t>(pk.prm.m_bits) ||
+        pk.ubk.inv.size() != static_cast<size_t>(pk.prm.m_bits))
+        throw std::runtime_error("pvac_ser: UBK size mismatch");
+    if (pk.powg_B.size() != static_cast<size_t>(pk.prm.B))
+        throw std::runtime_error("pvac_ser: powg_B size mismatch");
+    for (const auto& column : pk.H) {
+        if (column.nbits != static_cast<uint64_t>(pk.prm.m_bits))
+            throw std::runtime_error("pvac_ser: H bitvec length mismatch");
+    }
+}
 
 inline void write_params(Writer& w, const pvac::Params& prm) {
     w.i32(prm.B);
@@ -277,7 +334,7 @@ inline pvac::Layer read_layer(Reader& r, uint8_t ver = VERSION_V2) {
         if (r.failed) return L;
         L.PC.resize(nPC);
         for (size_t i = 0; i < nPC; i++)
-            r.raw(L.PC[i].data(), 32);
+            L.PC[i] = r.rist_point();
     }
 
     return L;
@@ -307,6 +364,7 @@ inline pvac::Edge read_edge(Reader& r) {
 }
 
 inline std::vector<uint8_t> serialize_cipher(const pvac::Cipher& C) {
+    validate_cipher_structure(C);
     Writer w;
     w.header(TAG_CIPHER);
     w.u64(C.slots);
@@ -343,6 +401,7 @@ inline pvac::Cipher deserialize_cipher(const uint8_t* data, size_t len) {
         for (size_t i = 0; i < nE; ++i) C.E[i] = read_edge(r);
     }
     if (r.failed) throw std::runtime_error(r.error);
+    validate_cipher_structure(C);
     return C;
 }
 
@@ -414,6 +473,7 @@ inline pvac::PubKey deserialize_pubkey_raw(const uint8_t* data, size_t len) {
     }
 
     if (r.failed) throw std::runtime_error(r.error);
+    validate_pubkey_structure(pk);
     return pk;
 }
 
@@ -577,6 +637,9 @@ inline pvac::Cipher read_cipher_raw(Reader& r, uint8_t ver = VERSION_V2) {
         C.E.resize(nE);
         for (size_t i = 0; i < nE; ++i) C.E[i] = read_edge(r);
     }
+    if (r.failed)
+        throw std::runtime_error(r.error);
+    validate_cipher_structure(C);
     return C;
 }
 
@@ -602,7 +665,10 @@ inline pvac::RangeProof deserialize_range_proof(const uint8_t* data, size_t len)
 
     pvac::RangeProof rp;
     size_t nbits = r.u64();
-    r.check_count(nbits, 8);
+    if (nbits != pvac::RANGE_BITS)
+        r.fail("pvac_ser: unexpected range proof bit length");
+    if (!r.failed)
+        r.check_count(nbits, 8);
 
     if (!r.failed) {
         rp.ct_bit.resize(nbits);
@@ -623,8 +689,6 @@ inline pvac::RangeProof deserialize_range_proof(const uint8_t* data, size_t len)
     return rp;
 }
 
-// ═══ Aggregated Range Proof ═══
-
 inline std::vector<uint8_t> serialize_agg_range_proof(const pvac::AggregatedRangeProof& arp) {
     Writer w;
     w.header(TAG_AGG_RANGE_PROOF);
@@ -641,7 +705,10 @@ inline pvac::AggregatedRangeProof deserialize_agg_range_proof(const uint8_t* dat
 
     pvac::AggregatedRangeProof arp;
     size_t nbits = r.u64();
-    r.check_count(nbits, 8);
+    if (nbits != pvac::RANGE_BITS)
+        r.fail("pvac_ser: unexpected range proof bit length");
+    if (!r.failed)
+        r.check_count(nbits, 8);
     if (!r.failed) {
         arp.ct_bit.resize(nbits);
         for (size_t i = 0; i < nbits && !r.failed; ++i)
@@ -664,6 +731,7 @@ struct RangeProofAny {
 };
 
 inline RangeProofAny deserialize_range_proof_any(const uint8_t* data, size_t len) {
+    // Header layout: MAGIC[4] + VERSION[1] + TAG[1]
     if (len < 6) throw std::runtime_error("pvac_ser: range proof too short");
     uint8_t tag = data[5];
     RangeProofAny result;

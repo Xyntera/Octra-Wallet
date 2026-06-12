@@ -253,6 +253,30 @@ struct RangeProofHandle {
     RangeProofHandle& operator=(const RangeProofHandle&) = delete;
 };
 
+struct AggRangeProofHandle {
+    pvac_agg_range_proof value = nullptr;
+    explicit AggRangeProofHandle(pvac_agg_range_proof v) : value(v) {}
+    ~AggRangeProofHandle() { if (value) pvac_free_agg_range_proof(value); }
+    AggRangeProofHandle(const AggRangeProofHandle&) = delete;
+    AggRangeProofHandle& operator=(const AggRangeProofHandle&) = delete;
+};
+
+std::array<uint8_t, 32> commit_ct_checked(pvac_pubkey pk, pvac_cipher ct) {
+    std::array<uint8_t, 32> out{};
+    size_t out_len = 0;
+    int rc = pvac_commit_ct_v2(pk, ct, out.data(), out.size(), &out_len);
+    if (rc != 0 || out_len != out.size()) throw std::runtime_error("pvac_commit_ct_v2 failed");
+    return out;
+}
+
+std::array<uint8_t, 32> pedersen_commit_checked(uint64_t amount, const uint8_t blinding[32]) {
+    std::array<uint8_t, 32> out{};
+    size_t out_len = 0;
+    int rc = pvac_pedersen_commit_v2(amount, blinding, out.data(), out.size(), &out_len);
+    if (rc != 0 || out_len != out.size()) throw std::runtime_error("pvac_pedersen_commit_v2 failed");
+    return out;
+}
+
 std::string encode_cipher(pvac_cipher cipher) {
     auto bytes = serialize_bytes(pvac_serialize_cipher, cipher);
     return std::string(kHfhePrefix) + base64_encode(bytes.data(), bytes.size());
@@ -265,6 +289,11 @@ std::string encode_zero_proof(pvac_zero_proof proof) {
 
 std::string encode_range_proof(pvac_range_proof proof) {
     auto bytes = serialize_bytes(pvac_serialize_range_proof, proof);
+    return std::string(kRangePrefix) + base64_encode(bytes.data(), bytes.size());
+}
+
+std::string encode_agg_range_proof(pvac_agg_range_proof proof) {
+    auto bytes = serialize_bytes(pvac_serialize_agg_range_proof, proof);
     return std::string(kRangePrefix) + base64_encode(bytes.data(), bytes.size());
 }
 
@@ -347,8 +376,7 @@ json encrypt_balance(const json& payload) {
     CipherHandle cipher(pvac_enc_value_seeded(ctx.pubkey, ctx.seckey, amount, seed.data()));
     if (!cipher.value) throw std::runtime_error("pvac_enc_value_seeded failed");
 
-    uint8_t commitment[32] = {0};
-    pvac_pedersen_commit(amount, blinding.data(), commitment);
+    auto commitment = pedersen_commit_checked(amount, blinding.data());
 
     ZeroProofHandle proof(
         pvac_make_zero_proof_bound(ctx.pubkey, ctx.seckey, cipher.value, amount, blinding.data())
@@ -357,7 +385,7 @@ json encrypt_balance(const json& payload) {
 
     json encrypted_data = {
         {"cipher", encode_cipher(cipher.value)},
-        {"amount_commitment", base64_encode(commitment, sizeof(commitment))},
+        {"amount_commitment", base64_encode(commitment.data(), commitment.size())},
         {"zero_proof", encode_zero_proof(proof.value)},
         {"blinding", base64_encode(blinding.data(), blinding.size())},
     };
@@ -381,8 +409,7 @@ json decrypt_balance(const json& payload) {
     CipherHandle amount_cipher(pvac_enc_value_seeded(ctx.pubkey, ctx.seckey, amount, seed.data()));
     if (!amount_cipher.value) throw std::runtime_error("pvac_enc_value_seeded failed");
 
-    uint8_t commitment[32] = {0};
-    pvac_pedersen_commit(amount, blinding.data(), commitment);
+    auto commitment = pedersen_commit_checked(amount, blinding.data());
 
     ZeroProofHandle proof(
         pvac_make_zero_proof_bound(ctx.pubkey, ctx.seckey, amount_cipher.value, amount, blinding.data())
@@ -394,18 +421,19 @@ json decrypt_balance(const json& payload) {
     );
     if (!new_balance_cipher.value) throw std::runtime_error("pvac_ct_sub failed");
 
+    // webcli submits the aggregated R1CS proof for the post-decrypt balance.
     const uint64_t new_balance = current_balance - amount;
-    RangeProofHandle range_proof(
-        pvac_make_range_proof(ctx.pubkey, ctx.seckey, new_balance_cipher.value, new_balance)
+    AggRangeProofHandle range_proof(
+        pvac_make_aggregated_range_proof(ctx.pubkey, ctx.seckey, new_balance_cipher.value, new_balance)
     );
-    if (!range_proof.value) throw std::runtime_error("pvac_make_range_proof failed");
+    if (!range_proof.value) throw std::runtime_error("pvac_make_aggregated_range_proof failed");
 
     json encrypted_data = {
         {"cipher", encode_cipher(amount_cipher.value)},
-        {"amount_commitment", base64_encode(commitment, sizeof(commitment))},
+        {"amount_commitment", base64_encode(commitment.data(), commitment.size())},
         {"zero_proof", encode_zero_proof(proof.value)},
         {"blinding", base64_encode(blinding.data(), blinding.size())},
-        {"range_proof_balance", encode_range_proof(range_proof.value)},
+        {"range_proof_balance", encode_agg_range_proof(range_proof.value)},
     };
 
     return {
@@ -457,8 +485,7 @@ json stealth_prepare_send(const json& payload) {
     CipherHandle delta_cipher(pvac_enc_value_seeded(ctx.pubkey, ctx.seckey, amount, seed.data()));
     if (!delta_cipher.value) throw std::runtime_error("pvac_enc_value_seeded failed");
 
-    uint8_t commitment[32] = {0};
-    pvac_commit_ct(ctx.pubkey, delta_cipher.value, commitment);
+    auto commitment = commit_ct_checked(ctx.pubkey, delta_cipher.value);
 
     CipherHandle new_balance_cipher(
         pvac_ct_sub(ctx.pubkey, current_cipher.value, delta_cipher.value)
@@ -475,8 +502,7 @@ json stealth_prepare_send(const json& payload) {
     );
     if (!range_balance.value) throw std::runtime_error("pvac_make_range_proof balance failed");
 
-    uint8_t amount_commitment[32] = {0};
-    pvac_pedersen_commit(amount, blinding.data(), amount_commitment);
+    auto amount_commitment = pedersen_commit_checked(amount, blinding.data());
     ZeroProofHandle send_proof(
         pvac_make_zero_proof_bound(ctx.pubkey, ctx.seckey, delta_cipher.value, amount, blinding.data())
     );
@@ -485,14 +511,14 @@ json stealth_prepare_send(const json& payload) {
     json encrypted_data = {
         {"version", 5},
         {"delta_cipher", encode_cipher(delta_cipher.value)},
-        {"commitment", base64_encode(commitment, sizeof(commitment))},
+        {"commitment", base64_encode(commitment.data(), commitment.size())},
         {"range_proof_delta", encode_range_proof(range_delta.value)},
         {"range_proof_balance", encode_range_proof(range_balance.value)},
         {"eph_pub", base64_encode(eph_pub, sizeof(eph_pub))},
         {"stealth_tag", hex_encode(stealth_tag.data(), stealth_tag.size())},
         {"enc_amount", enc_amount},
         {"claim_pub", hex_encode(claim_pub.data(), claim_pub.size())},
-        {"amount_commitment", base64_encode(amount_commitment, sizeof(amount_commitment))},
+        {"amount_commitment", base64_encode(amount_commitment.data(), amount_commitment.size())},
         {"send_zero_proof", encode_zero_proof(send_proof.value)},
     };
 
@@ -556,8 +582,7 @@ json stealth_prepare_claim(const json& payload) {
     CipherHandle claim_cipher(pvac_enc_value_seeded(ctx.pubkey, ctx.seckey, amount, seed.data()));
     if (!claim_cipher.value) throw std::runtime_error("pvac_enc_value_seeded failed");
 
-    uint8_t commitment[32] = {0};
-    pvac_commit_ct(ctx.pubkey, claim_cipher.value, commitment);
+    auto commitment = commit_ct_checked(ctx.pubkey, claim_cipher.value);
     ZeroProofHandle proof(
         pvac_make_zero_proof_bound(ctx.pubkey, ctx.seckey, claim_cipher.value, amount, blinding.data())
     );
@@ -567,7 +592,7 @@ json stealth_prepare_claim(const json& payload) {
         {"version", 5},
         {"output_id", payload.value("output_id", json())},
         {"claim_cipher", encode_cipher(claim_cipher.value)},
-        {"commitment", base64_encode(commitment, sizeof(commitment))},
+        {"commitment", base64_encode(commitment.data(), commitment.size())},
         {"claim_secret", hex_encode(claim_secret.data(), claim_secret.size())},
         {"zero_proof", encode_zero_proof(proof.value)},
     };
@@ -599,9 +624,10 @@ extern "C" {
 
 char* octra_core_version() {
     return ok({
-        {"version", "0.2.0"},
+        {"version", "0.3.0"},
         {"bridge", "cpp-ffi"},
         {"pvac", "webcli-native-c-api"},
+        {"webcli", "0.05.01-alpha"},
     });
 }
 

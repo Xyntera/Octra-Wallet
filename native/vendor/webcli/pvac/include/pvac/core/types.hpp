@@ -122,6 +122,62 @@ struct PubKey {
     std::vector<Fp> powg_B;
 };
 
+inline bool is_valid_cipher_shape(const Cipher& cipher) {
+    if (cipher.slots == 0)
+        return false;
+    if (!cipher.c0.empty() && cipher.c0.size() != cipher.slots)
+        return false;
+    for (size_t layer_id = 0; layer_id < cipher.L.size(); ++layer_id) {
+        const auto& layer = cipher.L[layer_id];
+        if (layer.rule != RRule::BASE && layer.rule != RRule::PROD)
+            return false;
+        if (layer.rule == RRule::PROD && (layer.pa >= layer_id || layer.pb >= layer_id))
+            return false;
+        if (layer.rule == RRule::PROD && !layer.PC.empty())
+            return false;
+        if (!layer.PC.empty() && layer.PC.size() != cipher.slots)
+            return false;
+    }
+    for (const auto& edge : cipher.E) {
+        if (edge.layer_id >= cipher.L.size())
+            return false;
+        if (edge.ch != SGN_P && edge.ch != SGN_M)
+            return false;
+        if (edge.w.size() != cipher.slots)
+            return false;
+    }
+    return true;
+}
+
+inline bool is_valid_pubkey_shape(const PubKey& pk) {
+    if (pk.prm.B <= 0 || pk.prm.m_bits <= 0 || pk.prm.n_bits <= 0)
+        return false;
+    if (pk.H.size() != static_cast<size_t>(pk.prm.n_bits))
+        return false;
+    if (pk.ubk.perm.size() != static_cast<size_t>(pk.prm.m_bits) ||
+        pk.ubk.inv.size() != static_cast<size_t>(pk.prm.m_bits))
+        return false;
+    if (pk.powg_B.size() != static_cast<size_t>(pk.prm.B))
+        return false;
+    for (const auto& column : pk.H) {
+        if (column.nbits != static_cast<uint64_t>(pk.prm.m_bits))
+            return false;
+    }
+    return true;
+}
+
+inline bool is_cipher_compatible_with_pubkey(const PubKey& pk, const Cipher& cipher) {
+    if (!is_valid_pubkey_shape(pk) || !is_valid_cipher_shape(cipher))
+        return false;
+    for (const auto& edge : cipher.E) {
+        if (edge.idx >= pk.powg_B.size())
+            return false;
+        if (edge.s.nbits != static_cast<uint64_t>(pk.prm.m_bits))
+            return false;
+    }
+    return true;
+}
+
 struct SecKey {
     std::array<uint64_t, 4> prf_k;
     std::vector<uint64_t> lpn_s_bits;

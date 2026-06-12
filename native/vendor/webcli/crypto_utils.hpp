@@ -267,10 +267,6 @@ inline void ed25519_pk_to_curve25519(const uint8_t ed_sk[64], uint8_t x_pk[32]) 
     crypto_scalarmult_base(x_pk, x_sk);
 }
 
-
-
-// dont touch
-
 inline bool ed25519_pub_to_x25519(const uint8_t ed_pub[32], uint8_t x_pub[32]) {
     BN_CTX* ctx = BN_CTX_new();
     BIGNUM *p = BN_new(), *y = BN_new(), *one = BN_new();
@@ -317,9 +313,6 @@ done:
     return ok;
 }
 
-
-// !!
-
 inline void secure_zero(void* ptr, size_t len) {
     volatile uint8_t* p = static_cast<volatile uint8_t*>(ptr);
     while (len--) *p++ = 0;
@@ -337,6 +330,26 @@ inline bool try_mlock(void* ptr, size_t len) {
 
 inline void keypair_from_seed(const uint8_t seed[32], uint8_t sk[64], uint8_t pk[32]) {
     crypto_sign_seed_keypair(pk, sk, seed);
+}
+
+inline std::string validate_pin(const std::string& pin) {
+    if (pin.empty()) return "PIN required";
+    if (pin.size() < 8) return "PIN must be at least 8 characters";
+    if (pin.size() > 64) return "PIN too long (max 64 characters)";
+    if (pin.size() < 15) {
+        bool has_letter = false;
+        bool has_digit = false;
+        bool has_symbol = false;
+        for (unsigned char c : pin) {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) has_letter = true;
+            else if (c >= '0' && c <= '9') has_digit = true;
+            else has_symbol = true;
+        }
+        if (!has_letter || !has_digit || !has_symbol) {
+            return "under 15 chars: must include a letter, a digit and a special symbol";
+        }
+    }
+    return "";
 }
 
 inline std::array<uint8_t, 32> derive_key_from_pin(
@@ -419,7 +432,7 @@ inline std::array<uint8_t, 32> derive_hd_seed(const uint8_t master_seed[64],
         memcpy(result.data(), master_seed, 32);
     } else if (hd_version == 2 && index == 0) {
         const char* key = "Octra seed";
-
+        
         auto mac = hmac_sha512((const uint8_t*)key, 10, master_seed, 64);
         memcpy(result.data(), mac.data(), 32);
     } else {

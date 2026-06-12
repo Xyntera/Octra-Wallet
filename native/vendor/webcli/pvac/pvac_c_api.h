@@ -36,6 +36,7 @@ pvac_cipher pvac_ct_sub_const(pvac_pubkey pk, pvac_cipher ct, uint64_t k);
 pvac_cipher pvac_ct_div_const(pvac_pubkey pk, pvac_cipher ct, uint64_t k_lo, uint64_t k_hi);
 pvac_cipher pvac_ct_square_seeded(pvac_pubkey pk, pvac_cipher ct, const uint8_t seed[32]);
 void pvac_commit_ct(pvac_pubkey pk, pvac_cipher ct, uint8_t out[32]);
+int pvac_commit_ct_v2(pvac_pubkey pk, pvac_cipher ct, uint8_t *out, size_t out_cap, size_t *out_len);
 
 pvac_zero_proof pvac_make_zero_proof(pvac_pubkey pk, pvac_seckey sk, pvac_cipher ct);
 int pvac_verify_zero(pvac_pubkey pk, pvac_cipher ct, pvac_zero_proof proof);
@@ -46,6 +47,8 @@ int pvac_verify_zero_bound(pvac_pubkey pk, pvac_cipher ct, pvac_zero_proof proof
                             const uint8_t amount_commitment[32]);
 
 void pvac_pedersen_commit(uint64_t amount, const uint8_t blinding[32], uint8_t out[32]);
+int pvac_pedersen_commit_v2(uint64_t amount, const uint8_t blinding[32],
+                            uint8_t *out, size_t out_cap, size_t *out_len);
 
 pvac_range_proof pvac_make_range_proof(pvac_pubkey pk, pvac_seckey sk,
                                        pvac_cipher ct, uint64_t value);

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <stdexcept>
 
 #include "../core/types.hpp"
 #include "../crypto/lpn.hpp"
@@ -17,12 +18,15 @@ inline std::vector<Fp> layer_R_cached(
     std::vector<uint8_t>& st,
     std::vector<std::vector<Fp>>& cache
 ) {
-    if ((size_t)lid >= C.L.size()) std::abort();
+    if ((size_t)lid >= C.L.size())
+        throw std::runtime_error("pvac: layer_R_cached: layer id out of range");
+    if (st.size() != C.L.size() || cache.size() != C.L.size())
+        throw std::runtime_error("pvac: layer_R_cached: work buffer shape rejected");
 
     if (st[lid] == 2) return cache[lid];
 
     if (st[lid] == 1) {
-        std::abort();
+        throw std::runtime_error("pvac: layer_R_cached: cycle in layer dependency graph");
     }
 
     st[lid] = 1;
@@ -42,6 +46,8 @@ inline std::vector<Fp> layer_R_cached(
 }
 
 inline std::vector<Fp> dec_values(const PubKey& pk, const SecKey& sk, const Cipher& C) {
+    if (!is_cipher_compatible_with_pubkey(pk, C))
+        throw std::runtime_error("pvac: cipher/pubkey mismatch");
     size_t L = C.L.size();
     size_t S = C.slots;
 
@@ -73,7 +79,16 @@ inline std::vector<Fp> dec_values(const PubKey& pk, const SecKey& sk, const Ciph
 }
 
 inline Fp dec_value(const PubKey& pk, const SecKey& sk, const Cipher& C) {
+    if (C.slots != 1)
+        throw std::runtime_error("pvac: dec_value: cipher has multi-slot payload; use dec_values for vector decryption or dec_value_slot0 to explicitly coerce");
     return dec_values(pk, sk, C)[0];
+}
+
+inline Fp dec_value_slot0(const PubKey& pk, const SecKey& sk, const Cipher& C) {
+    auto v = dec_values(pk, sk, C);
+    if (v.empty())
+        throw std::runtime_error("pvac: dec_value_slot0: cipher decrypts to empty value vector");
+    return v[0];
 }
 
 }

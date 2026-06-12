@@ -5,6 +5,7 @@
 #include <array>
 #include <thread>
 #include <algorithm>
+#include <stdexcept>
 
 #include "../core/types.hpp"
 #include "verify_zero.hpp"
@@ -16,6 +17,11 @@
 namespace pvac {
 
 static constexpr size_t RANGE_BITS = 64;
+static constexpr size_t RANGE_MAX_VALUE_LAYERS = 512;
+static constexpr size_t RANGE_MAX_VALUE_EDGES = 65536;
+static constexpr size_t RANGE_MAX_BIT_LAYERS = 4;
+static constexpr size_t RANGE_MAX_BIT_EDGES = 8192;
+static constexpr size_t RANGE_MAX_SLOTS = 1;
 
 struct RangeProof {
 
@@ -26,12 +32,31 @@ struct RangeProof {
     ZeroProof lc_proof;
 };
 
+inline bool range_value_cipher_ok(const PubKey& pk, const Cipher& ct) {
+    return
+        is_cipher_compatible_with_pubkey(pk, ct) &&
+        ct.slots > 0 &&
+        ct.slots <= RANGE_MAX_SLOTS &&
+        ct.L.size() <= RANGE_MAX_VALUE_LAYERS &&
+        ct.E.size() <= RANGE_MAX_VALUE_EDGES;
+}
+
+inline bool range_bit_cipher_ok(const PubKey& pk, const Cipher& ct, size_t slots) {
+    return
+        is_cipher_compatible_with_pubkey(pk, ct) &&
+        ct.slots == slots &&
+        ct.L.size() <= RANGE_MAX_BIT_LAYERS &&
+        ct.E.size() <= RANGE_MAX_BIT_EDGES;
+}
+
 inline RangeProof make_range_proof(
     const PubKey& pk,
     const SecKey& sk,
     const Cipher& ct_value,
     uint64_t value
 ) {
+    if (!range_value_cipher_ok(pk, ct_value))
+        throw std::runtime_error("pvac: range proof value rejected");
     RangeProof rp;
     rp.ct_bit.resize(RANGE_BITS);
     rp.bit_proofs.resize(RANGE_BITS);
@@ -43,9 +68,6 @@ inline RangeProof make_range_proof(
         for (size_t i = 0; i < RANGE_BITS; ++i) {
             uint64_t b_i = (value >> i) & 1;
             rp.ct_bit[i] = enc_value(pk, sk, b_i);
-
-
-            //!!
             auto ct_b_m1 = ct_sub_const(pk, rp.ct_bit[i], (uint64_t)1);
             uint8_t mul_seed[32];
             for (int k = 0; k < 32; ++k)
@@ -60,8 +82,6 @@ inline RangeProof make_range_proof(
                 rp.ct_bit[i] = enc_value(pk, sk, b_i);
                 auto ct_b_m1 = ct_sub_const(pk, rp.ct_bit[i], (uint64_t)1);
                 uint8_t mul_seed[32];
-
-                // !
                 for (int k = 0; k < 32; ++k)
                     mul_seed[k] = (uint8_t)((i * 37 + k * 13 + 0xA0) & 0xFF);
                 auto ct_check = ct_mul_seeded(pk, rp.ct_bit[i], ct_b_m1, mul_seed);
@@ -109,14 +129,15 @@ inline bool verify_range(
     const Cipher& ct_value,
     const RangeProof& rp
 ) {
+    if (!range_value_cipher_ok(pk, ct_value)) return false;
 
     if (rp.ct_bit.size() != RANGE_BITS) return false;
     if (rp.bit_proofs.size() != RANGE_BITS) return false;
+    for (const auto& ct_bit : rp.ct_bit)
+        if (!range_bit_cipher_ok(pk, ct_bit, ct_value.slots))
+            return false;
 
     unsigned hw = std::thread::hardware_concurrency();
-
-
-    // !
     unsigned n_threads = (hw > 1) ? std::min(hw, (unsigned)RANGE_BITS) : 1;
     std::vector<bool> results(RANGE_BITS, false);
 
@@ -162,7 +183,6 @@ inline bool verify_range(
 
     for (size_t i = 1; i < RANGE_BITS; ++i) {
         Fp power_of_two;
-
         if (i < 64) {
             power_of_two = fp_from_u64(1ULL << i);
         } else {
@@ -182,9 +202,10 @@ inline bool verify_range(
     return true;
 }
 
+
 struct AggregatedRangeProof {
-    std::vector<Cipher> ct_bit;// 64 encrypted bits (needed by verifier)
-    bp::R1CSProof proof; // single R1CS proof covering all 65 circuits
+    std::vector<Cipher> ct_bit;
+    bp::R1CSProof proof;
 };
 
 namespace detail {
@@ -230,7 +251,7 @@ inline void prepare_lc(
     const Cipher& ct_lc_diff,
     BitPrepData& out
 ) {
-    out.ct_check = ct_lc_diff;  // reuse field for the LC cipher
+    out.ct_check = ct_lc_diff;
 
     size_t nL = ct_lc_diff.L.size();
     size_t S  = ct_lc_diff.slots;
@@ -289,6 +310,8 @@ inline AggregatedRangeProof make_aggregated_range_proof(
     const Cipher& ct_value,
     uint64_t value
 ) {
+    if (!range_value_cipher_ok(pk, ct_value))
+        throw std::runtime_error("pvac: aggregated range value rejected");
     AggregatedRangeProof arp;
     arp.ct_bit.resize(RANGE_BITS);
 
@@ -346,7 +369,11 @@ inline bool verify_aggregated_range(
     const Cipher& ct_value,
     const AggregatedRangeProof& arp
 ) {
+    if (!range_value_cipher_ok(pk, ct_value)) return false;
     if (arp.ct_bit.size() != RANGE_BITS) return false;
+    for (const auto& ct_bit : arp.ct_bit)
+        if (!range_bit_cipher_ok(pk, ct_bit, ct_value.slots))
+            return false;
 
     std::vector<detail::BitPrepData> vdata(RANGE_BITS);
     for (size_t i = 0; i < RANGE_BITS; ++i) {
@@ -376,6 +403,7 @@ inline bool verify_aggregated_range(
                           nullptr, nullptr);
 
     size_t expected_v = dummy.num_committed();
+    if (expected_v > bp::R1CS_MAX_COMMITTED) return false;
     if (arp.proof.V.size() != expected_v) return false;
 
     size_t v_offset = 0;
@@ -394,6 +422,7 @@ inline bool verify_aggregated_range(
         }
         v_offset += nB * S;
     }
+
     {
         size_t nB = lc_data.bases.size();
         size_t S = ct_lc_diff.slots;

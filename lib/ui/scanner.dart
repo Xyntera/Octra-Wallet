@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 class ScannerPage extends StatefulWidget {
@@ -11,6 +10,13 @@ class ScannerPage extends StatefulWidget {
 
 class _ScannerPageState extends State<ScannerPage> {
   final MobileScannerController controller = MobileScannerController();
+  bool _handled = false;
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,9 +30,11 @@ class _ScannerPageState extends State<ScannerPage> {
           MobileScanner(
             controller: controller,
             onDetect: (capture) {
+              if (_handled) return;
               final List<Barcode> barcodes = capture.barcodes;
               for (final barcode in barcodes) {
                 if (barcode.rawValue != null) {
+                  _handled = true;
                   controller.stop();
                   Navigator.pop(context, barcode.rawValue);
                   return;

@@ -23,6 +23,94 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
   Map<String, String>? _generatedData;
 
   @override
+  void dispose() {
+    _importController.dispose();
+    super.dispose();
+  }
+
+  /// Asks for a PIN if needed, plays the success animation, then enters the app.
+  Future<void> _finishSetup(WalletController wallet) async {
+    if (!wallet.hasPinSync) {
+      if (!mounted) return;
+      final pin = await Navigator.of(context).push<String>(
+        CupertinoPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => const PinScreen(isSettingPin: true),
+        ),
+      );
+      if (pin == null || pin.length < 4) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+      await wallet.setPin(pin);
+    }
+
+    if (!mounted) return;
+    await Navigator.of(context).push(PageRouteBuilder(
+        opaque: false,
+        pageBuilder: (_, __, ___) =>
+            SuccessAnimation(onComplete: () => Navigator.pop(context))));
+
+    if (!mounted) return;
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    } else {
+      Navigator.of(context).pushReplacement(
+          CupertinoPageRoute(builder: (_) => const HomeTabScaffold()));
+    }
+  }
+
+  Future<void> _handleImport() async {
+    setState(() => _isLoading = true);
+    final wallet = context.read<WalletController>();
+    final data = await wallet.processInput(_importController.text);
+
+    if (data != null) {
+      await wallet.addWallet(
+          data['address']!, data['privateKeyBase64']!, data['mnemonic']);
+      await _finishSetup(wallet);
+    } else {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      showCupertinoDialog(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+                title: const Text("Invalid Input"),
+                content: const Text(
+                    "Could not import wallet. Check your seed or key."),
+                actions: [
+                  CupertinoDialogAction(
+                      child: const Text("OK"),
+                      onPressed: () => Navigator.pop(ctx))
+                ],
+              ));
+    }
+  }
+
+  Future<void> _handleCreate() async {
+    setState(() => _isLoading = true);
+    final wallet = context.read<WalletController>();
+    await Future.delayed(600.ms);
+    final data = await wallet.generateNewWalletData();
+    if (!mounted) return;
+    setState(() {
+      _isLoading = false;
+      _generatedData = data;
+    });
+  }
+
+  Future<void> _handleBackupConfirmed() async {
+    final mnemonic = _generatedData!['mnemonic']!;
+    final privKey = _generatedData!['privateKeyBase64']!;
+    final address = _generatedData!['address']!;
+    setState(() => _isLoading = true);
+    final wallet = context.read<WalletController>();
+    await Future.delayed(500.ms);
+    await wallet.addWallet(address, privKey, mnemonic);
+    await _finishSetup(wallet);
+  }
+
+  @override
   Widget build(BuildContext context) {
     // If we have generated data, show the backup screen
     if (_generatedData != null) {
@@ -99,77 +187,7 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
                       const SizedBox(width: 16),
                       Expanded(
                         child: CupertinoButton.filled(
-                          onPressed: _isLoading
-                              ? null
-                              : () async {
-                                  setState(() => _isLoading = true);
-                                  final wallet =
-                                      context.read<WalletController>();
-                                  final data = await wallet
-                                      .processInput(_importController.text);
-
-                                  if (data != null) {
-                                    await wallet.addWallet(
-                                        data['address']!,
-                                        data['privateKeyBase64']!,
-                                        data['mnemonic']);
-
-                                    if (!wallet.hasPinSync) {
-                                      final pin = await Navigator.of(context)
-                                          .push<String>(
-                                        CupertinoPageRoute(
-                                          fullscreenDialog: true,
-                                          builder: (_) => const PinScreen(
-                                              isSettingPin: true),
-                                        ),
-                                      );
-                                      if (pin == null || pin.length < 4) {
-                                        if (mounted) {
-                                          setState(() => _isLoading = false);
-                                        }
-                                        return;
-                                      }
-                                      await wallet.setPin(pin);
-                                    }
-
-                                    if (!mounted) return;
-                                    // Success Animation
-                                    await Navigator.of(context).push(
-                                        PageRouteBuilder(
-                                            opaque: false,
-                                            pageBuilder: (_, __, ___) =>
-                                                SuccessAnimation(
-                                                    onComplete: () =>
-                                                        Navigator.pop(
-                                                            context))));
-
-                                    if (!mounted) return;
-                                    if (Navigator.canPop(context)) {
-                                      Navigator.pop(context);
-                                    } else {
-                                      Navigator.of(context).pushReplacement(
-                                          CupertinoPageRoute(
-                                              builder: (_) =>
-                                                  const HomeTabScaffold()));
-                                    }
-                                  } else {
-                                    setState(() => _isLoading = false);
-                                    showCupertinoDialog(
-                                        context: context,
-                                        builder: (ctx) => CupertinoAlertDialog(
-                                              title:
-                                                  const Text("Invalid Input"),
-                                              content: const Text(
-                                                  "Could not import wallet. Check your seed or key."),
-                                              actions: [
-                                                CupertinoDialogAction(
-                                                    child: const Text("OK"),
-                                                    onPressed: () =>
-                                                        Navigator.pop(ctx))
-                                              ],
-                                            ));
-                                  }
-                                },
+                          onPressed: _isLoading ? null : _handleImport,
                           child: _isLoading
                               ? const CupertinoActivityIndicator(
                                   color: CupertinoColors.white)
@@ -182,19 +200,7 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
                   SizedBox(
                     width: double.infinity,
                     child: CupertinoButton.filled(
-                      onPressed: _isLoading
-                          ? null
-                          : () async {
-                              setState(() => _isLoading = true);
-                              await Future.delayed(600.ms);
-                              final data = await context
-                                  .read<WalletController>()
-                                  .generateNewWalletData();
-                              setState(() {
-                                _isLoading = false;
-                                _generatedData = data;
-                              });
-                            },
+                      onPressed: _isLoading ? null : _handleCreate,
                       child: _isLoading
                           ? const CupertinoActivityIndicator(
                               color: CupertinoColors.white)
@@ -232,7 +238,6 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
   Widget _buildBackupScreen(BuildContext context) {
     final mnemonic = _generatedData!['mnemonic']!;
     final privKey = _generatedData!['privateKeyBase64']!;
-    final address = _generatedData!['address']!;
 
     return CupertinoPageScaffold(
       backgroundColor: const Color(0xFF000000),
@@ -314,48 +319,7 @@ class _WalletSetupPageState extends State<WalletSetupPage> {
               SizedBox(
                 width: double.infinity,
                 child: CupertinoButton.filled(
-                  onPressed: _isLoading
-                      ? null
-                      : () async {
-                          setState(() => _isLoading = true);
-                          await Future.delayed(500.ms);
-                          await context
-                              .read<WalletController>()
-                              .addWallet(address, privKey, mnemonic);
-
-                          final wallet = context.read<WalletController>();
-                          if (!wallet.hasPinSync) {
-                            final pin = await Navigator.of(context).push<String>(
-                              CupertinoPageRoute(
-                                fullscreenDialog: true,
-                                builder: (_) =>
-                                    const PinScreen(isSettingPin: true),
-                              ),
-                            );
-                            if (pin == null || pin.length < 4) {
-                              if (mounted) {
-                                setState(() => _isLoading = false);
-                              }
-                              return;
-                            }
-                            await wallet.setPin(pin);
-                          }
-
-                          if (!mounted) return;
-                          await Navigator.of(context).push(PageRouteBuilder(
-                              opaque: false,
-                              pageBuilder: (_, __, ___) => SuccessAnimation(
-                                  onComplete: () => Navigator.pop(context))));
-
-                          if (!mounted) return;
-                          if (Navigator.canPop(context)) {
-                            Navigator.pop(context);
-                          } else {
-                            Navigator.of(context).pushReplacement(
-                                CupertinoPageRoute(
-                                    builder: (_) => const HomeTabScaffold()));
-                          }
-                        },
+                  onPressed: _isLoading ? null : _handleBackupConfirmed,
                   child: _isLoading
                       ? const CupertinoActivityIndicator(
                           color: CupertinoColors.white)

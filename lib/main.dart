@@ -92,6 +92,7 @@ class _StartupCheckState extends State<StartupCheck> {
 
     if (hasStoredWallet) {
       if (!wallet.hasPinSync) {
+        if (!mounted) return;
         final String? pin = await Navigator.of(context).push<String>(
           CupertinoPageRoute(
             fullscreenDialog: true,
@@ -101,6 +102,7 @@ class _StartupCheckState extends State<StartupCheck> {
         if (pin == null || pin.length < 4) return;
         await wallet.setPin(pin);
       } else if (!wallet.vaultUnlockedSync) {
+        if (!mounted) return;
         final bool? success = await Navigator.of(context).push(
           CupertinoPageRoute(
               fullscreenDialog: true,
@@ -114,6 +116,7 @@ class _StartupCheckState extends State<StartupCheck> {
       }
     }
 
+    if (!mounted) return;
     if (wallet.hasWallet) {
        Navigator.of(context).pushReplacement(
          CupertinoPageRoute(builder: (_) => const HomeTabScaffold())

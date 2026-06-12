@@ -1,6 +1,5 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Colors, Icons;
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/material.dart' show Colors;
 
 class LegalPage extends StatelessWidget {
   final String title;

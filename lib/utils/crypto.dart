@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 const _saltBalanceV2 = "octra_encrypted_balance_v2";
-const _saltBalanceV1 = "octra_encrypted_balance_v1";
 const _scryptSalt = "OCTRA_SYMMETRIC_V1";
 final _aes = AesGcm.with256bits();
 
@@ -81,7 +81,7 @@ Future<int> decryptClientBalance(String encryptedData, String privKeyB64) async 
     final intVal = int.tryParse(utf8.decode(decrypted));
     return intVal ?? 0;
   } catch (e) {
-    print("Decrypt error: $e");
+    debugPrint("Decrypt error: $e");
     return 0;
   }
 }

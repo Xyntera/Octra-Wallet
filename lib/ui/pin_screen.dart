@@ -510,6 +510,18 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
 
   Future<void> _lockNow(WalletController wallet) async {
     await wallet.lockVault();
+    if (!mounted) return;
+    // Immediately re-engage the PIN gate; PinScreen cannot be dismissed
+    // without the correct PIN, so this acts as the lock screen.
+    await Navigator.of(context, rootNavigator: true).push<bool>(
+      CupertinoPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => const PinScreen(isChecking: true),
+      ),
+    );
+    if (!wallet.hasWallet) {
+      await wallet.loadWallets();
+    }
     if (mounted) setState(() {});
   }
 

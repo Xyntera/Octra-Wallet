@@ -11,9 +11,9 @@ class Wallet {
     this.mnemonic,
     String? name,
     int? color,
-  }) : 
-    this.name = name ?? "Wallet",
-    this.color = color ?? 0xFF357AF6; // System Blue default
+  }) :
+    name = name ?? "Wallet",
+    color = color ?? 0xFF357AF6; // System Blue default
 
   Map<String, dynamic> toJson() => {
     'address': address,

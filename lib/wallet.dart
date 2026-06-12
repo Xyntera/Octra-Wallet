@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:bip39/bip39.dart' as bip39;
 import 'package:crypto/crypto.dart' as crypto_hash;
@@ -310,7 +309,7 @@ class WalletController extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      print("Error loading wallets: $e");
+      debugPrint("Error loading wallets: $e");
     }
   }
 
@@ -325,7 +324,7 @@ class WalletController extends ChangeNotifier {
       }
       await _persistVault();
     } catch (e) {
-      print("Error saving wallets: $e");
+      debugPrint("Error saving wallets: $e");
     }
   }
 
@@ -513,7 +512,7 @@ class WalletController extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      print("Vault unlock error: $e");
+      debugPrint("Vault unlock error: $e");
       return false;
     }
   }
@@ -650,7 +649,7 @@ class WalletController extends ChangeNotifier {
         final checked = await _validatedWallet(wallet);
         if (seen.add(checked.address)) repaired.add(checked);
       } catch (e) {
-        print("Skipping invalid wallet entry: $e");
+        debugPrint("Skipping invalid wallet entry: $e");
       }
     }
     return repaired;
@@ -659,7 +658,7 @@ class WalletController extends ChangeNotifier {
   Future<Wallet> _validatedWallet(Wallet wallet) async {
     final derivedAddress = await _deriveAddressFromPrivateKey(wallet);
     if (derivedAddress == wallet.address) return wallet;
-    print(
+    debugPrint(
         "Wallet address repaired: stored ${wallet.address}, key derives $derivedAddress");
     return Wallet(
       address: derivedAddress,
@@ -746,7 +745,7 @@ class WalletController extends ChangeNotifier {
       if (!_isActiveRefresh(refreshId, wallet)) return;
       await _fetchHistory(wallet, limit: 20, offset: 0);
     } catch (e) {
-      print("Refresh error: $e");
+      debugPrint("Refresh error: $e");
     } finally {
       isLoading = false;
       notifyListeners();
@@ -782,7 +781,7 @@ class WalletController extends ChangeNotifier {
         history = [];
         historyWalletAddress = wallet.address;
       }
-      print("History fetch error: $e");
+      debugPrint("History fetch error: $e");
     }
   }
 
@@ -836,7 +835,7 @@ class WalletController extends ChangeNotifier {
     normalized['amount_label'] = amountLabel;
     normalized['token_symbol'] = tokenSymbol;
     normalized['explorer_url'] =
-        hash.isEmpty ? '' : '${explorerBaseUrlSync}/tx.html?hash=$hash';
+        hash.isEmpty ? '' : '$explorerBaseUrlSync/tx.html?hash=$hash';
     normalized['amount'] =
         _octAmountValue(tx['amount_raw'] ?? tx['amount']).toString();
     return normalized;
@@ -945,7 +944,7 @@ class WalletController extends ChangeNotifier {
         return normalized;
       }
     } catch (e) {
-      print("Fee fetch error for $operationType: $e");
+      debugPrint("Fee fetch error for $operationType: $e");
     }
 
     final fallback = _fallbackFee(operationType);
@@ -1087,10 +1086,10 @@ class WalletController extends ChangeNotifier {
           );
         },
       );
-      print('$stage completed in ${sw.elapsedMilliseconds} ms');
+      debugPrint('$stage completed in ${sw.elapsedMilliseconds} ms');
       return result;
     } catch (e) {
-      print('$stage failed after ${sw.elapsedMilliseconds} ms: $e');
+      debugPrint('$stage failed after ${sw.elapsedMilliseconds} ms: $e');
       rethrow;
     }
   }
@@ -1158,8 +1157,9 @@ class WalletController extends ChangeNotifier {
     }).toList();
 
     if (filtered.isEmpty) return [RpcResponse(0, "No valid recipients", null)];
-    if (filtered.length > 5)
+    if (filtered.length > 5) {
       return [RpcResponse(0, "Bulk send supports up to 5 recipients", null)];
+    }
 
     await refresh();
     final startNonce = await _nextNonce(wallet);
@@ -1222,7 +1222,7 @@ class WalletController extends ChangeNotifier {
         });
       }
     } catch (e) {
-      print("Token list error: $e");
+      debugPrint("Token list error: $e");
     }
 
     // Load custom-pinned tokens not returned by octra_tokensByAddress (zero balance)
@@ -1557,7 +1557,7 @@ class WalletController extends ChangeNotifier {
       try {
         await ensurePvacRegistered(wallet: wallet, showProgress: false);
       } catch (e) {
-        print("Background PVAC registration failed for ${wallet.address}: $e");
+        debugPrint("Background PVAC registration failed for ${wallet.address}: $e");
       } finally {
         _pvacRegistrationInFlight.remove(wallet.address);
       }
@@ -1602,7 +1602,7 @@ class WalletController extends ChangeNotifier {
     if (remotePvacPubkey != null &&
         remotePvacPubkey.isNotEmpty &&
         remotePvacPubkey != 'null') {
-      print("PVAC key conflict for ${wallet.address}");
+      debugPrint("PVAC key conflict for ${wallet.address}");
       return false;
     }
 
@@ -1677,7 +1677,7 @@ class WalletController extends ChangeNotifier {
         'balance': balance?.toString() ?? '0',
       };
     } catch (e) {
-      print("Token load error for $address: $e");
+      debugPrint("Token load error for $address: $e");
       return null;
     }
   }
@@ -1746,7 +1746,7 @@ class WalletController extends ChangeNotifier {
       encryptedRaw = raw < 0 ? 0 : raw;
       encryptedBalance = encryptedRaw / 1000000.0;
     } catch (e) {
-      print("Encrypted balance refresh error: $e");
+      debugPrint("Encrypted balance refresh error: $e");
     }
   }
 
@@ -1888,7 +1888,10 @@ class WalletController extends ChangeNotifier {
   Future<void> fetchPriceData() async {
     if (isPriceFetching) return;
     if (_priceFetchedAt != null &&
-        DateTime.now().difference(_priceFetchedAt!) < const Duration(minutes: 5)) return;
+        DateTime.now().difference(_priceFetchedAt!) <
+            const Duration(minutes: 5)) {
+      return;
+    }
 
     isPriceFetching = true;
     notifyListeners();
@@ -1931,7 +1934,7 @@ class WalletController extends ChangeNotifier {
         client.close();
       }
     } catch (e) {
-      print('Price fetch error: $e');
+      debugPrint('Price fetch error: $e');
     }
 
     isPriceFetching = false;
@@ -1950,7 +1953,7 @@ class WalletController extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      print('fetchAllWalletBalances error: $e');
+      debugPrint('fetchAllWalletBalances error: $e');
     }
   }
 

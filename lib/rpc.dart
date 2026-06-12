@@ -316,8 +316,9 @@ class RpcClient {
   Future<List<dynamic>> listContractsRpc() async {
     final res = await rpcCall('octra_listContracts', [], timeoutSeconds: 15);
     final body = rpcResult(res);
-    if (body is Map && body['contracts'] is List)
+    if (body is Map && body['contracts'] is List) {
       return body['contracts'] as List;
+    }
     if (body is List) return body;
     return const [];
   }

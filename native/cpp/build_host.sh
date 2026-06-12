@@ -16,7 +16,7 @@ gcc -O2 -fPIC \
   -c "$WEBCLI_DIR/lib/randombytes.c" \
   -o "$OUT_DIR/randombytes.o"
 
-g++ -std=c++17 -O2 -march=native -fPIC -shared \
+g++ -std=c++17 -O2 -march=native -fPIC -pthread -shared \
   "$SCRIPT_DIR/octra_core.cpp" \
   "$WEBCLI_DIR/pvac/pvac_c_api.cpp" \
   "$OUT_DIR/tweetnacl.o" \

@@ -1454,7 +1454,7 @@ class WalletController extends ChangeNotifier {
           currentBalanceRaw: encryptedRaw,
         ),
       ),
-      timeout: const Duration(minutes: 3),
+      timeout: const Duration(minutes: 10),
     );
 
     final tx = await _buildPrivacyTx(

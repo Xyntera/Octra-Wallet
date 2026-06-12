@@ -60,7 +60,8 @@ class PvacWorker {
       'current_balance_raw': currentBalanceRaw.toString(),
       'seed_b64': _randomBase64(32),
       'blinding_b64': _randomBase64(32),
-    }, timeout: const Duration(minutes: 2));
+      // The 64-bit range proof takes minutes on phone-class CPUs.
+    }, timeout: const Duration(minutes: 10));
   }
 
   Future<Map<String, dynamic>> stealthPrepareSend({
@@ -82,7 +83,8 @@ class PvacWorker {
       'seed_b64': _randomBase64(32),
       'blinding_b64': _randomBase64(32),
       'ephemeral_private_key_b64': _randomBase64(32),
-    }, timeout: const Duration(minutes: 3));
+      // Two 64-bit range proofs (run in parallel natively); still minutes on phones.
+    }, timeout: const Duration(minutes: 10));
   }
 
   Future<Map<String, dynamic>> stealthScanOutputs({

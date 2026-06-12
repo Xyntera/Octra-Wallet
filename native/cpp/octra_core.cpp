@@ -9,6 +9,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "json.hpp"
@@ -253,14 +254,6 @@ struct RangeProofHandle {
     RangeProofHandle& operator=(const RangeProofHandle&) = delete;
 };
 
-struct AggRangeProofHandle {
-    pvac_agg_range_proof value = nullptr;
-    explicit AggRangeProofHandle(pvac_agg_range_proof v) : value(v) {}
-    ~AggRangeProofHandle() { if (value) pvac_free_agg_range_proof(value); }
-    AggRangeProofHandle(const AggRangeProofHandle&) = delete;
-    AggRangeProofHandle& operator=(const AggRangeProofHandle&) = delete;
-};
-
 std::array<uint8_t, 32> commit_ct_checked(pvac_pubkey pk, pvac_cipher ct) {
     std::array<uint8_t, 32> out{};
     size_t out_len = 0;
@@ -289,11 +282,6 @@ std::string encode_zero_proof(pvac_zero_proof proof) {
 
 std::string encode_range_proof(pvac_range_proof proof) {
     auto bytes = serialize_bytes(pvac_serialize_range_proof, proof);
-    return std::string(kRangePrefix) + base64_encode(bytes.data(), bytes.size());
-}
-
-std::string encode_agg_range_proof(pvac_agg_range_proof proof) {
-    auto bytes = serialize_bytes(pvac_serialize_agg_range_proof, proof);
     return std::string(kRangePrefix) + base64_encode(bytes.data(), bytes.size());
 }
 
@@ -421,19 +409,18 @@ json decrypt_balance(const json& payload) {
     );
     if (!new_balance_cipher.value) throw std::runtime_error("pvac_ct_sub failed");
 
-    // webcli submits the aggregated R1CS proof for the post-decrypt balance.
     const uint64_t new_balance = current_balance - amount;
-    AggRangeProofHandle range_proof(
-        pvac_make_aggregated_range_proof(ctx.pubkey, ctx.seckey, new_balance_cipher.value, new_balance)
+    RangeProofHandle range_proof(
+        pvac_make_range_proof(ctx.pubkey, ctx.seckey, new_balance_cipher.value, new_balance)
     );
-    if (!range_proof.value) throw std::runtime_error("pvac_make_aggregated_range_proof failed");
+    if (!range_proof.value) throw std::runtime_error("pvac_make_range_proof failed");
 
     json encrypted_data = {
         {"cipher", encode_cipher(amount_cipher.value)},
         {"amount_commitment", base64_encode(commitment.data(), commitment.size())},
         {"zero_proof", encode_zero_proof(proof.value)},
         {"blinding", base64_encode(blinding.data(), blinding.size())},
-        {"range_proof_balance", encode_agg_range_proof(range_proof.value)},
+        {"range_proof_balance", encode_range_proof(range_proof.value)},
     };
 
     return {
@@ -492,14 +479,30 @@ json stealth_prepare_send(const json& payload) {
     );
     if (!new_balance_cipher.value) throw std::runtime_error("pvac_ct_sub failed");
 
+    // webcli generates both stealth range proofs on parallel threads; they
+    // dominate the wall time of the whole operation.
     const uint64_t new_balance = current_balance - amount;
-    RangeProofHandle range_delta(
-        pvac_make_range_proof(ctx.pubkey, ctx.seckey, delta_cipher.value, amount)
-    );
+    pvac_range_proof delta_raw = nullptr;
+    pvac_range_proof balance_raw = nullptr;
+    std::thread delta_thread([&]() {
+        try {
+            delta_raw = pvac_make_range_proof(ctx.pubkey, ctx.seckey, delta_cipher.value, amount);
+        } catch (...) {
+            delta_raw = nullptr;
+        }
+    });
+    std::thread balance_thread([&]() {
+        try {
+            balance_raw = pvac_make_range_proof(ctx.pubkey, ctx.seckey, new_balance_cipher.value, new_balance);
+        } catch (...) {
+            balance_raw = nullptr;
+        }
+    });
+    delta_thread.join();
+    balance_thread.join();
+    RangeProofHandle range_delta(delta_raw);
+    RangeProofHandle range_balance(balance_raw);
     if (!range_delta.value) throw std::runtime_error("pvac_make_range_proof delta failed");
-    RangeProofHandle range_balance(
-        pvac_make_range_proof(ctx.pubkey, ctx.seckey, new_balance_cipher.value, new_balance)
-    );
     if (!range_balance.value) throw std::runtime_error("pvac_make_range_proof balance failed");
 
     auto amount_commitment = pedersen_commit_checked(amount, blinding.data());

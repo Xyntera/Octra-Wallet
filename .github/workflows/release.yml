@@ -3,6 +3,10 @@ name: Release
 on:
   push:
     tags: ["v*"]
+    branches: [main]
+    # Cutting a release without pushing a tag: commit the tag name
+    # (e.g. v1.1.0) into this file and the workflow tags + releases it.
+    paths: [".github/release-version"]
   workflow_dispatch:
     inputs:
       tag:
@@ -12,9 +16,6 @@ on:
 
 permissions:
   contents: write
-
-env:
-  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
   android:
@@ -227,6 +228,22 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Resolve release tag
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${{ github.ref_name }}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="$(tr -d '[:space:]' < .github/release-version)"
+          fi
+          if [[ ! "$TAG" =~ ^v[0-9] ]]; then
+            echo "Invalid release tag: '$TAG'" >&2
+            exit 1
+          fi
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "Releasing $TAG"
 
       - name: Stage versioned assets and checksums
         run: |

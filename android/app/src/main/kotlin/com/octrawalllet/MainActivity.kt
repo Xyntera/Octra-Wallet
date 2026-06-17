@@ -1,4 +1,4 @@
-package com.example.ouqro_wallet
+package com.octrawalllet
 
 import io.flutter.embedding.android.FlutterActivity
 

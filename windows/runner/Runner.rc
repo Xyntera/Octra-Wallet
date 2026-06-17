@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "app.octrawallet" "\0"
-            VALUE "FileDescription", "ouqro_wallet" "\0"
+            VALUE "CompanyName", "Octra Wallet" "\0"
+            VALUE "FileDescription", "Octra Wallet" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "ouqro_wallet" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 app.octrawallet. All rights reserved." "\0"
+            VALUE "InternalName", "Octra Wallet" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Octra Wallet. All rights reserved." "\0"
             VALUE "OriginalFilename", "ouqro_wallet.exe" "\0"
-            VALUE "ProductName", "ouqro_wallet" "\0"
+            VALUE "ProductName", "Octra Wallet" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

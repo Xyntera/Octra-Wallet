@@ -4,13 +4,11 @@ on:
   push:
     tags: ["v*"]
     branches: [main]
-    # Cutting a release without pushing a tag: commit the tag name
-    # (e.g. v1.1.0) into this file and the workflow tags + releases it.
     paths: [".github/release-version"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v1.1.0); created on main if it does not exist"
+        description: "Release tag (e.g. v1.2.0); created on main if it does not exist"
         required: true
         type: string
 
@@ -63,8 +61,24 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > android/release.keystore
+          fi
+
       - name: Build release APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: flutter build apk --release --target-platform android-arm64,android-x64
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f android/release.keystore
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -107,17 +121,69 @@ jobs:
       - name: Verify bundled native core
         run: test -f build/linux/x64/release/bundle/lib/liboctra_core.so
 
-      - name: Package bundle
+      - name: Package tar.gz bundle
         run: |
           cd build/linux/x64/release
           mv bundle octra-wallet
           tar -czf octra-wallet-linux-x64.tar.gz octra-wallet
 
-      - name: Upload Linux artifact
+      - name: Build Debian package
+        run: |
+          PKG_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //;s/+.*//')
+          BUNDLE="build/linux/x64/release/octra-wallet"
+          DEB_ROOT="/tmp/octra-wallet-deb"
+
+          mkdir -p "$DEB_ROOT/DEBIAN"
+          mkdir -p "$DEB_ROOT/usr/lib/octra-wallet"
+          mkdir -p "$DEB_ROOT/usr/bin"
+          mkdir -p "$DEB_ROOT/usr/share/applications"
+          mkdir -p "$DEB_ROOT/usr/share/icons/hicolor/256x256/apps"
+
+          cp -r "$BUNDLE"/. "$DEB_ROOT/usr/lib/octra-wallet/"
+
+          cat > "$DEB_ROOT/usr/bin/octra-wallet" << 'LAUNCHER'
+          #!/bin/bash
+          exec /usr/lib/octra-wallet/ouqro_wallet "$@"
+          LAUNCHER
+          chmod +x "$DEB_ROOT/usr/bin/octra-wallet"
+
+          cat > "$DEB_ROOT/usr/share/applications/octra-wallet.desktop" << 'DESKTOP'
+          [Desktop Entry]
+          Name=Octra Wallet
+          Comment=Privacy-preserving Octra blockchain wallet
+          Exec=octra-wallet
+          Icon=octra-wallet
+          Terminal=false
+          Type=Application
+          Categories=Finance;Network;
+          StartupWMClass=ouqro_wallet
+          DESKTOP
+
+          cp assets/icon.png "$DEB_ROOT/usr/share/icons/hicolor/256x256/apps/octra-wallet.png"
+
+          cat > "$DEB_ROOT/DEBIAN/control" << CONTROL
+          Package: octra-wallet
+          Version: $PKG_VERSION
+          Section: finance
+          Priority: optional
+          Architecture: amd64
+          Depends: libgtk-3-0, libsecret-1-0, libssl3
+          Maintainer: Octra Wallet <support@octrawalllet.com>
+          Description: Octra Wallet
+           Privacy-preserving Octra blockchain wallet with native PVAC core.
+           Supports public transfers, encrypted balances, and private stealth sends.
+          CONTROL
+
+          dpkg-deb --build --root-owner-group "$DEB_ROOT" \
+            build/linux/x64/release/octra-wallet-linux-x64.deb
+
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-linux
-          path: build/linux/x64/release/octra-wallet-linux-x64.tar.gz
+          path: |
+            build/linux/x64/release/octra-wallet-linux-x64.tar.gz
+            build/linux/x64/release/octra-wallet-linux-x64.deb
 
   windows:
     name: Windows desktop (x64)
@@ -159,17 +225,25 @@ jobs:
             exit 1
           }
 
-      - name: Package bundle
+      - name: Package portable zip
         shell: pwsh
         run: |
           Compress-Archive -Path build/windows/x64/runner/Release/* `
             -DestinationPath octra-wallet-windows-x64.zip
 
-      - name: Upload Windows artifact
+      - name: Build NSIS installer
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version: (.+)').Matches[0].Groups[1].Value -replace '\+.*', ''
+          & "C:\Program Files (x86)\NSIS\makensis.exe" "/DVERSION=$version" windows\installer.nsi
+
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-windows
-          path: octra-wallet-windows-x64.zip
+          path: |
+            octra-wallet-windows-x64.zip
+            Octra-Wallet-Setup.exe
 
   macos:
     name: macOS desktop (arm64)
@@ -205,16 +279,30 @@ jobs:
           codesign --force --deep --sign - "$APP"
           codesign --verify --deep "$APP"
 
-      - name: Package bundle
+      - name: Package portable zip
         run: |
           cd build/macos/Build/Products/Release
           ditto -c -k --sequesterRsrc --keepParent *.app octra-wallet-macos-arm64.zip
 
-      - name: Upload macOS artifact
+      - name: Build DMG
+        run: |
+          APP=$(ls -d build/macos/Build/Products/Release/*.app | head -1)
+          mkdir -p /tmp/dmg-staging
+          cp -r "$APP" /tmp/dmg-staging/
+          ln -s /Applications /tmp/dmg-staging/Applications
+          hdiutil create \
+            -volname "Octra Wallet" \
+            -srcfolder /tmp/dmg-staging \
+            -ov -format UDZO \
+            build/macos/Build/Products/Release/octra-wallet-macos-arm64.dmg
+
+      - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-macos
-          path: build/macos/Build/Products/Release/octra-wallet-macos-arm64.zip
+          path: |
+            build/macos/Build/Products/Release/octra-wallet-macos-arm64.zip
+            build/macos/Build/Products/Release/octra-wallet-macos-arm64.dmg
 
   publish:
     name: Publish GitHub release
@@ -249,10 +337,29 @@ jobs:
         run: |
           TAG="$RELEASE_TAG"
           mkdir -p dist
-          cp artifacts/release-android/app-release.apk          "dist/Octra-Wallet-$TAG-android.apk"
-          cp artifacts/release-linux/octra-wallet-linux-x64.tar.gz "dist/Octra-Wallet-$TAG-linux-x64.tar.gz"
-          cp artifacts/release-windows/octra-wallet-windows-x64.zip "dist/Octra-Wallet-$TAG-windows-x64.zip"
-          cp artifacts/release-macos/octra-wallet-macos-arm64.zip   "dist/Octra-Wallet-$TAG-macos-arm64.zip"
+
+          # Android
+          cp artifacts/release-android/app-release.apk \
+            "dist/Octra-Wallet-$TAG-android.apk"
+
+          # Linux
+          cp artifacts/release-linux/octra-wallet-linux-x64.tar.gz \
+            "dist/Octra-Wallet-$TAG-linux-x64.tar.gz"
+          cp artifacts/release-linux/octra-wallet-linux-x64.deb \
+            "dist/Octra-Wallet-$TAG-linux-x64.deb"
+
+          # Windows
+          cp artifacts/release-windows/octra-wallet-windows-x64.zip \
+            "dist/Octra-Wallet-$TAG-windows-x64.zip"
+          cp artifacts/release-windows/Octra-Wallet-Setup.exe \
+            "dist/Octra-Wallet-$TAG-windows-x64-Setup.exe"
+
+          # macOS
+          cp artifacts/release-macos/octra-wallet-macos-arm64.zip \
+            "dist/Octra-Wallet-$TAG-macos-arm64.zip"
+          cp artifacts/release-macos/octra-wallet-macos-arm64.dmg \
+            "dist/Octra-Wallet-$TAG-macos-arm64.dmg"
+
           cd dist
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt

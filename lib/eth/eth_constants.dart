@@ -10,7 +10,8 @@ class EthConstants {
   static const int chainId = 1;
 
   /// Default public mainnet JSON-RPC endpoint (user-overridable in settings).
-  static const String defaultRpcUrl = 'https://eth.llamarpc.com';
+  /// Matches the official webcli bridge reference (static/bridge.js).
+  static const String defaultRpcUrl = 'https://ethereum-rpc.publicnode.com';
 
   /// Wrapped OCT (wOCT) ERC-20 token.
   static const String wOctToken = '0x4647e1fE715c9e23959022C2416C71867F5a6E80';
@@ -29,7 +30,12 @@ class EthConstants {
   /// Minimum wrap amount enforced by the bridge (1 OCT, in micro-OCT).
   static const int minWrapMicroOct = 1000000;
 
-  // NOTE: wOCT token decimals are intentionally NOT hardcoded. OCT uses 6
-  // decimals (micro-OCT) on Octra; wOCT's ERC-20 `decimals()` must be read
-  // on-chain before converting amounts for a wrap/unwrap. Do not assume 18.
+  /// OCT decimals on Octra (micro-OCT).
+  static const int octDecimals = 6;
+
+  /// wOCT ERC-20 decimals. Confirmed from the official webcli bridge reference
+  /// (static/bridge.js uses OCT_DECIMALS = 6 to format wOCT balances), i.e.
+  /// wOCT mirrors OCT at 6 decimals — NOT the usual 18. Still verify against
+  /// the token's on-chain `decimals()` at runtime before converting amounts.
+  static const int wOctDecimals = 6;
 }

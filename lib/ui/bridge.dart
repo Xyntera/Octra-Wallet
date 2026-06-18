@@ -184,10 +184,44 @@ class _BridgeScreenState extends State<BridgeScreen> {
     super.dispose();
   }
 
-  int? _microAmount() {
-    final v = double.tryParse(_amountCtrl.text.trim());
-    if (v == null || v <= 0) return null;
-    return (v * 1000000).round();
+  int? _microAmount() => _parseMicro(_amountCtrl.text, 6);
+
+  /// Parses a human decimal amount to integer micro-units with no float math
+  /// (avoids `0.1 * 1e6` truncation). Returns null if invalid or > [decimals].
+  static int? _parseMicro(String input, int decimals) {
+    final s = input.trim();
+    if (s.isEmpty || s == '.') return null;
+    if (!RegExp(r'^\d*\.?\d*$').hasMatch(s)) return null;
+    final parts = s.split('.');
+    final whole = parts[0].isEmpty ? '0' : parts[0];
+    var frac = parts.length > 1 ? parts[1] : '';
+    if (frac.length > decimals) return null;
+    frac = frac.padRight(decimals, '0');
+    final micro = int.tryParse('$whole$frac');
+    if (micro == null || micro <= 0) return null;
+    return micro;
+  }
+
+  Future<bool?> _confirm(String title, String message) {
+    return showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(message, style: const TextStyle(fontSize: 13)),
+        ),
+        actions: [
+          CupertinoDialogAction(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Confirm')),
+        ],
+      ),
+    );
   }
 
   void _onDirectionChanged(BridgeDirection d) {
@@ -203,28 +237,41 @@ class _BridgeScreenState extends State<BridgeScreen> {
   Future<void> _submit() async {
     final micro = _microAmount();
     if (micro == null) {
-      setState(() => _status = 'Enter a valid amount.');
+      setState(() => _status = 'Enter a valid amount (max 6 decimals).');
       return;
     }
-    if (micro < EthConstants.minWrapMicroOct &&
-        _direction == BridgeDirection.wrap) {
+    if (_direction == BridgeDirection.wrap &&
+        micro < EthConstants.minWrapMicroOct) {
       setState(() => _status = 'Minimum is 1 OCT.');
       return;
     }
     final recipient = _recipientCtrl.text.trim();
-    setState(() {
-      _working = true;
-      _status = null;
-    });
     try {
       if (_direction == BridgeDirection.wrap) {
         if (!EthAccount.isValidAddress(recipient)) {
           throw StateError('Enter a valid Ethereum recipient.');
         }
-        final rec = await _service.startWrap(
-          ethRecipient: recipient,
-          microOct: micro,
-        );
+        // Balance gate (lock amount + Octra fee).
+        final lockFee = int.tryParse(EthConstants.lockOu) ?? 1000;
+        final availMicro = (_wallet.publicBalance * 1000000).round();
+        if (micro + lockFee > availMicro) {
+          throw StateError('Insufficient OCT balance — need '
+              '${_microInt(micro + lockFee)} OCT incl. fee, have '
+              '${_microInt(availMicro)}.');
+        }
+        if (!mounted) return;
+        final ok = await _confirm(
+            'Confirm wrap',
+            'Lock ${_microInt(micro)} OCT and mint wOCT to:\n$recipient\n\n'
+            'Real mainnet funds — this cannot be undone.');
+        if (ok != true) return;
+
+        setState(() {
+          _working = true;
+          _status = null;
+        });
+        final rec =
+            await _service.startWrap(ethRecipient: recipient, microOct: micro);
         setState(() => _status =
             'Locked OCT (${_short(rec.lockTxHash)}). Waiting for the epoch — '
             'this can take ~30–40 min. Then claim from history.');
@@ -240,20 +287,34 @@ class _BridgeScreenState extends State<BridgeScreen> {
               'Unwrap needs an Ethereum account that can sign. Tap Manage to '
               'create, import, or connect one.');
         }
-        if (recipient.length != 47 || !recipient.startsWith('oct')) {
-          throw StateError('Enter a valid Octra recipient.');
-        }
         try {
+          if (recipient.length != 47 || !recipient.startsWith('oct')) {
+            throw StateError('Enter a valid Octra recipient.');
+          }
+          // Balance gate.
+          await _service.refreshBalances(sender.address);
+          if (BigInt.from(micro) > _service.woctBalanceRaw) {
+            throw StateError('Insufficient wOCT balance — have '
+                '${_micro(_service.woctBalanceRaw)}.');
+          }
+          if (!mounted) return;
+          final ok = await _confirm(
+              'Confirm unwrap',
+              'Burn ${_microInt(micro)} wOCT and release OCT to:\n$recipient\n\n'
+              'Sends two Ethereum transactions (approve + burn) and costs gas.');
+          if (ok != true) return;
+
+          setState(() {
+            _working = true;
+            _status = null;
+          });
           await _service.startUnwrap(
-            sender: sender,
-            octraRecipient: recipient,
-            microOct: micro,
-          );
+              sender: sender, octraRecipient: recipient, microOct: micro);
+          setState(() => _status =
+              'Burned wOCT. OCT will be released to your Octra address shortly.');
         } finally {
           sender.dispose();
         }
-        setState(() => _status =
-            'Burned wOCT. OCT will be released to your Octra address shortly.');
       }
     } catch (e) {
       setState(() => _status = _clean(e));
@@ -269,8 +330,12 @@ class _BridgeScreenState extends State<BridgeScreen> {
           _status = 'Set up a signing Ethereum account to claim (Manage).');
       return;
     }
-    setState(() => _working = true);
     try {
+      final amount = BigInt.tryParse(rec.amountRaw) ?? BigInt.zero;
+      final ok = await _confirm('Claim wOCT',
+          'Submit the Ethereum claim for ${_micro(amount)} wOCT? This costs gas.');
+      if (ok != true) return;
+      setState(() => _working = true);
       await _service.claim(rec, sender);
       setState(() => _status = 'Claimed wOCT.');
     } catch (e) {
@@ -280,6 +345,9 @@ class _BridgeScreenState extends State<BridgeScreen> {
       if (mounted) setState(() => _working = false);
     }
   }
+
+  static String _microInt(int micro) =>
+      (micro / 1000000.0).toStringAsFixed(6);
 
   @override
   Widget build(BuildContext context) {
@@ -487,7 +555,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                    '${isWrap ? 'Wrap' : 'Unwrap'}  ${_micro(BigInt.parse(r.amountRaw))}',
+                    '${isWrap ? 'Wrap' : 'Unwrap'}  ${_micro(BigInt.tryParse(r.amountRaw) ?? BigInt.zero)}',
                     style: const TextStyle(
                         color: Colors.white, fontWeight: FontWeight.w500)),
                 const SizedBox(height: 2),

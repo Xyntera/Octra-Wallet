@@ -49,44 +49,6 @@ class RpcClient {
     }
   }
 
-  /// Private Request (Authentication via Header)
-  Future<RpcResponse> reqPrivate(String path, String privateKey,
-      {String method = 'GET', dynamic data}) async {
-    final url = Uri.parse('$baseUrl$path');
-    try {
-      final headers = {
-        'Content-Type': 'application/json',
-        'X-Private-Key': privateKey,
-      };
-
-      http.Response response;
-      final body = data != null ? jsonEncode(data) : null;
-
-      if (method.toUpperCase() == 'POST') {
-        response = await _client
-            .post(url, headers: headers, body: body)
-            .timeout(Duration(seconds: kTimeoutSeconds));
-      } else {
-        response = await _client
-            .get(url, headers: headers)
-            .timeout(Duration(seconds: kTimeoutSeconds));
-      }
-
-      dynamic jsonBody;
-      try {
-        if (response.body.trim().isNotEmpty) {
-          jsonBody = jsonDecode(response.body);
-        }
-      } catch (_) {
-        jsonBody = {};
-      }
-
-      return RpcResponse(response.statusCode, response.body, jsonBody);
-    } catch (e) {
-      return RpcResponse(0, e.toString(), null);
-    }
-  }
-
   // --- Specific Methods ---
 
   Future<RpcResponse> rpcCall(
@@ -240,16 +202,6 @@ class RpcClient {
     return null;
   }
 
-  Future<Map<String, dynamic>?> getEncryptedBalance(
-      String address, String privateKey) async {
-    final res =
-        await reqPrivate('/view_encrypted_balance/$address', privateKey);
-    if (res.statusCode == 200) {
-      return res.json;
-    }
-    return null;
-  }
-
   Future<Map<String, dynamic>?> getEncryptedBalanceRpc(
     String address,
     String signatureBase64,
@@ -384,38 +336,6 @@ class RpcClient {
       "encrypted_data": encryptedData,
     };
     return await req('POST', '/decrypt_balance', data: data);
-  }
-
-  Future<RpcResponse> createPrivateTransfer(String fromAddr, String toAddr,
-      double amount, String fromPrivKey, String toPubKey) async {
-    final data = {
-      "from": fromAddr,
-      "to": toAddr,
-      "amount": (amount * kMicro).toInt().toString(),
-      "from_private_key": fromPrivKey,
-      "to_public_key": toPubKey
-    };
-    return await req('POST', '/private_transfer', data: data);
-  }
-
-  Future<List<dynamic>> getPendingPrivateTransfers(
-      String address, String privateKey) async {
-    final res = await reqPrivate(
-        '/pending_private_transfers?address=$address', privateKey);
-    if (res.statusCode == 200 && res.json != null) {
-      return res.json['pending_transfers'] ?? [];
-    }
-    return [];
-  }
-
-  Future<RpcResponse> claimPrivateTransfer(
-      String address, String privateKey, String transferId) async {
-    final data = {
-      "recipient_address": address,
-      "private_key": privateKey,
-      "transfer_id": transferId
-    };
-    return await req('POST', '/claim_private_transfer', data: data);
   }
 
   Future<RpcResponse> sendTransaction(Map<String, dynamic> tx) async {

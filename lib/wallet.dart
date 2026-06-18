@@ -7,6 +7,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 
 import 'address.dart';
+import 'eth/eth_constants.dart';
 import 'native/octra_core_bridge.dart';
 import 'native/pvac_worker.dart';
 import 'rpc.dart';
@@ -1307,6 +1308,33 @@ class WalletController extends ChangeNotifier {
     final res = await rpc.sendTransaction(signed);
     await loadTokens();
     return res;
+  }
+
+  /// Locks [microOct] of OCT to the bridge vault so it can be wrapped to wOCT on
+  /// Ethereum for [ethRecipient]. This is an ordinary Octra contract-call tx
+  /// (op_type "call") to the bridge vault, with the method in `encrypted_data`
+  /// and the ETH recipient in `message`, matching the webcli bridge reference.
+  /// The result's `tx_hash` feeds the relayer claim flow (see
+  /// docs/bridge-implementation.md).
+  Future<RpcResponse> bridgeLockToEth(String ethRecipient, int microOct) async {
+    final wallet = currentWallet;
+    if (wallet == null) return RpcResponse(0, 'No wallet', null);
+    if (microOct <= 0) return RpcResponse(0, 'Invalid amount', null);
+    final recipient = ethRecipient.trim();
+    final txNonce = await _nextNonce(wallet);
+    final payload = <String, dynamic>{
+      'from': wallet.address,
+      'to_': EthConstants.bridgeVault,
+      'amount': microOct.toString(),
+      'nonce': txNonce,
+      'ou': EthConstants.lockOu,
+      'timestamp': (DateTime.now().millisecondsSinceEpoch / 1000).toDouble(),
+      'op_type': 'call',
+      'encrypted_data': EthConstants.lockMethod,
+      'message': jsonEncode([recipient]),
+    };
+    final signed = await _signTxPayload(wallet, payload);
+    return rpc.sendTransaction(signed);
   }
 
   /// ENCRYPT BALANCE

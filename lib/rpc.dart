@@ -444,6 +444,19 @@ class RpcClient {
     }
     return await req('GET', '/tx/$hash');
   }
+
+  /// Bridge: contract-call receipt for [hash], used to learn the lock's
+  /// `epoch`. Falls back to the transaction details, which also carry `epoch`.
+  Future<Map<String, dynamic>?> contractReceipt(String hash) async {
+    final rpcRes =
+        await rpcCall('contract_receipt', [hash], timeoutSeconds: 15);
+    final result = rpcResult(rpcRes);
+    if (result is Map) return Map<String, dynamic>.from(result);
+    final tx = await getTx(hash);
+    final txResult = rpcResult(tx) ?? tx.json;
+    if (txResult is Map) return Map<String, dynamic>.from(txResult);
+    return null;
+  }
 }
 
 class RpcResponse {

@@ -21,6 +21,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../wallet.dart';
+import 'bridge.dart';
 import 'wallet_setup.dart';
 import 'pin_screen.dart';
 import 'portfolio.dart';
@@ -566,6 +567,15 @@ class _DashboardTabState extends State<DashboardTab> {
                         icon: CupertinoIcons.square_list,
                         label: 'Wallets',
                         onTap: () => _showWalletsSheet(context),
+                      ),
+                      _buildActionButton(
+                        context,
+                        icon: CupertinoIcons.arrow_2_squarepath,
+                        label: 'Bridge',
+                        onTap: () => Navigator.of(context).push(
+                          CupertinoPageRoute(
+                              builder: (_) => const BridgeScreen()),
+                        ),
                       ),
                     ],
                   ).animate().fadeIn(delay: 200.ms),

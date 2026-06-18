@@ -1,8 +1,15 @@
 Unicode True
 
-; Pass version at build time: makensis /DVERSION=1.2.0 windows\installer.nsi
+; Pass version + absolute paths at build time, e.g.
+;   makensis /DVERSION=1.2.0 /DSRCDIR=<abs> /DOUTFILE=<abs> windows\installer.nsi
 !ifndef VERSION
   !define VERSION "1.2.0"
+!endif
+!ifndef SRCDIR
+  !define SRCDIR "build\windows\x64\runner\Release"
+!endif
+!ifndef OUTFILE
+  !define OUTFILE "Octra-Wallet-Setup.exe"
 !endif
 
 !define APP_NAME   "Octra Wallet"
@@ -16,7 +23,7 @@ Unicode True
 
 Name "${APP_NAME} ${VERSION}"
 BrandingText "${APP_NAME} ${VERSION}"
-OutFile "Octra-Wallet-Setup.exe"
+OutFile "${OUTFILE}"
 RequestExecutionLevel admin
 ShowInstDetails show
 ShowUninstDetails show
@@ -40,8 +47,9 @@ InstallDirRegKey HKLM "${REG_ROOT}" "InstallDir"
 Section "!${APP_NAME}" SecMain
   SectionIn RO
   SetOutPath "$INSTDIR"
-  ; Called from repo root so path is relative to there
-  File /r "build\windows\x64\runner\Release\*.*"
+  ; SRCDIR is an absolute path passed from CI; '*' includes extension-less
+  ; files (NOTICES) and the data/ subtree.
+  File /r "${SRCDIR}\*"
 
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
   CreateShortcut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" \

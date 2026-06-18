@@ -1,0 +1,88 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+import 'eth_constants.dart';
+
+/// Client for the Octra bridge signer/relayer JSON-RPC API
+/// (relayer-002838819188.octra.network). The relayer builds the Merkle proofs
+/// and the opaque Ethereum claim calldata, and drives the reverse-direction
+/// OCT release. The webcli reference proxies these through its local server;
+/// a native app calls the relayer directly.
+class BridgeRelayer {
+  final String baseUrl;
+  final http.Client _client;
+
+  BridgeRelayer({String? baseUrl, http.Client? client})
+      : baseUrl = baseUrl ?? EthConstants.relayerUrl,
+        _client = client ?? http.Client();
+
+  Future<dynamic> _rpc(String method, List<dynamic> params) async {
+    final res = await _client.post(
+      Uri.parse(baseUrl),
+      headers: const {'content-type': 'application/json'},
+      body: jsonEncode({
+        'jsonrpc': '2.0',
+        'id': 1,
+        'method': method,
+        'params': params,
+      }),
+    );
+    if (res.statusCode != 200) {
+      throw StateError('relayer $method: HTTP ${res.statusCode}');
+    }
+    final body = jsonDecode(res.body);
+    if (body is Map && body['error'] != null) {
+      throw StateError('relayer $method: ${jsonEncode(body['error'])}');
+    }
+    if (body is Map) return body['result'];
+    throw StateError('relayer $method: unexpected response');
+  }
+
+  /// Number of bridge messages in [epoch]; > 0 means the header is available
+  /// and a claim can be assembled.
+  Future<int> bridgeHeaderMessageCount(String epoch) async {
+    final result = await _rpc('bridgeHeader', [epoch]);
+    if (result is Map && result['message_count'] is num) {
+      return (result['message_count'] as num).toInt();
+    }
+    return 0;
+  }
+
+  /// All bridge messages for [epoch]; each entry has `recipient` and
+  /// `leaf_index`.
+  Future<List<Map<String, dynamic>>> bridgeMessagesByEpoch(String epoch) async {
+    final result = await _rpc('bridgeMessagesByEpoch', [epoch]);
+    final msgs =
+        (result is Map ? result['messages'] : null) as List? ?? const [];
+    return msgs.whereType<Map>().map((m) => m.cast<String, dynamic>()).toList();
+  }
+
+  /// Opaque, fully-built Ethereum claim calldata for a (epoch, leaf) message.
+  Future<String> bridgeClaimCalldata(String epoch, int leafIndex) async {
+    final result = await _rpc('bridgeClaimCalldata', [epoch, leafIndex]);
+    final calldata = result is Map ? result['calldata'] : null;
+    if (calldata is String && calldata.startsWith('0x')) return calldata;
+    throw StateError('relayer returned no claim calldata');
+  }
+
+  /// Finds the claim calldata for [ethRecipient] in [epoch], or null if the
+  /// recipient does not yet have a message in that epoch.
+  Future<String?> claimCalldataForRecipient(
+    String epoch,
+    String ethRecipient,
+  ) async {
+    final messages = await bridgeMessagesByEpoch(epoch);
+    final target = ethRecipient.toLowerCase();
+    for (final m in messages) {
+      final recip = (m['recipient'] as String?)?.toLowerCase();
+      final leaf = m['leaf_index'];
+      if (recip == target && leaf is num) {
+        return bridgeClaimCalldata(epoch, leaf.toInt());
+      }
+    }
+    return null;
+  }
+
+  void dispose() => _client.close();
+}

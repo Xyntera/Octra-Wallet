@@ -24,6 +24,32 @@ class EthConstants {
   static const String octraLightClient =
       '0xC01cA57dc7f7C4B6f1B6b87B85D79e5ddf0dF55d';
 
+  /// Octra-side bridge vault contract that locks OCT for wrapping. The lock is
+  /// a normal Octra contract-call tx to this address (see [lockMethod]).
+  static const String bridgeVault =
+      'oct5MrNfjiXFNRDLwsodn8Zm9hDKNGAYt3eQDCQ52bSpCHq';
+
+  /// Octra contract method invoked to lock OCT for the bridge. Carried in the
+  /// tx `encrypted_data` field; the ETH recipient is `message=[ethAddress]`.
+  static const String lockMethod = 'lock_to_eth';
+
+  /// `ou` (gas) value used for the Octra lock tx, matching the webcli reference.
+  static const String lockOu = '1000';
+
+  /// Remote bridge signer/relayer. Produces Merkle proofs and the opaque
+  /// Ethereum claim calldata, and drives the reverse-direction OCT release.
+  static const String relayerUrl =
+      'https://relayer-002838819188.octra.network';
+
+  /// Recovery feed (keyed by lowercased ETH address) for recovering locks.
+  static const String recoveryUrl =
+      'https://relayer-002838819188.octra.network/recovery.json';
+
+  /// Ethereum gas limits used by the reference for each bridge action.
+  static const int claimGasLimit = 0x60000; // 393216
+  static const int approveGasLimit = 0x30000; // 196608
+  static const int burnGasLimit = 0x40000; // 262144
+
   /// BIP44 derivation path for the in-app Ethereum account (account 0).
   static const String ethDerivationPath = "m/44'/60'/0'/0/0";
 

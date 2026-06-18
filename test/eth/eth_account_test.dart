@@ -27,5 +27,21 @@ void main() {
       expect(EthAccount.isValidAddress('not-an-address'), isFalse);
       expect(EthAccount.isValidAddress(expectedAddress), isTrue);
     });
+
+    test('imports from a private key (Hardhat #0 key -> #0 address)', () {
+      const key =
+          '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
+      final account = EthAccount.fromPrivateKey(key);
+      expect(account.address, expectedAddress);
+      expect(account.mode, EthAccountMode.imported);
+      expect(account.canSign, isTrue);
+      // also accepts the key without 0x
+      expect(EthAccount.fromPrivateKey(key.substring(2)).address,
+          expectedAddress);
+    });
+
+    test('rejects malformed private keys', () {
+      expect(() => EthAccount.fromPrivateKey('0x1234'), throwsArgumentError);
+    });
   });
 }

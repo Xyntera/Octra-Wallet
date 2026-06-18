@@ -8,7 +8,9 @@ import '../eth/bridge_models.dart';
 import '../eth/bridge_service.dart';
 import '../eth/eth_account.dart';
 import '../eth/eth_constants.dart';
+import '../eth/eth_wallet_store.dart';
 import '../wallet.dart';
+import 'eth_account_sheet.dart';
 
 /// OCT <-> wOCT bridge screen. Experimental: moves real mainnet funds.
 class BridgeScreen extends StatefulWidget {
@@ -25,37 +27,46 @@ class _BridgeScreenState extends State<BridgeScreen> {
   final _recipientCtrl = TextEditingController();
 
   BridgeDirection _direction = BridgeDirection.wrap;
-  EthAccount? _ethAccount;
+  final EthWalletStore _store = EthWalletStore();
   bool _working = false;
   String? _status;
+
+  EthAccount? get _ethAccount => _store.account;
 
   @override
   void initState() {
     super.initState();
     _wallet = context.read<WalletController>();
     _service = BridgeService(wallet: _wallet);
-    _ethAccount = _deriveEthAccount();
+    _store.addListener(_onAccountChanged);
+    _service.loadHistory();
+    _store.load();
+  }
+
+  void _onAccountChanged() {
+    if (!mounted) return;
+    _syncRecipientField();
+    final addr = _store.account?.address;
+    if (addr != null) _service.refreshBalances(addr);
+    setState(() {});
+  }
+
+  void _syncRecipientField() {
     _recipientCtrl.text = _direction == BridgeDirection.wrap
         ? (_ethAccount?.address ?? '')
         : (_wallet.currentWallet?.address ?? '');
-    _service.loadHistory();
-    if (_ethAccount != null) {
-      _service.refreshBalances(_ethAccount!.address);
-    }
   }
 
-  EthAccount? _deriveEthAccount() {
-    final mnemonic = _wallet.currentWallet?.mnemonic;
-    if (mnemonic == null || mnemonic.trim().isEmpty) return null;
-    try {
-      return EthAccount.fromMnemonic(mnemonic.trim());
-    } catch (_) {
-      return null;
-    }
+  Future<void> _manageAccount() async {
+    await Navigator.of(context).push(CupertinoPageRoute(
+      builder: (_) => buildEthAccountScreen(_store),
+    ));
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _store.removeListener(_onAccountChanged);
     _amountCtrl.dispose();
     _recipientCtrl.dispose();
     _service.dispose();
@@ -115,8 +126,8 @@ class _BridgeScreenState extends State<BridgeScreen> {
         final account = _ethAccount;
         if (account == null || !account.canSign) {
           throw StateError(
-              'Unwrap needs the in-app Ethereum account (this wallet has no '
-              'recovery phrase to derive it).');
+              'Unwrap needs an Ethereum account that can sign. Tap Manage to '
+              'create, import, or connect one.');
         }
         if (recipient.length != 47 || !recipient.startsWith('oct')) {
           throw StateError('Enter a valid Octra recipient.');
@@ -230,25 +241,44 @@ class _BridgeScreenState extends State<BridgeScreen> {
     return AnimatedBuilder(
       animation: _service,
       builder: (_, __) {
-        final addr = _ethAccount?.address;
+        final acc = _ethAccount;
         return Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: const Color(0xFF1C1C1E),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                addr == null
-                    ? 'No in-app Ethereum account (import a wallet with a '
-                        'recovery phrase to enable it).'
-                    : 'Ethereum account (derived): ${_short(addr)}',
-                style: const TextStyle(color: Colors.white, fontSize: 13),
+              Row(
+                children: [
+                  const Icon(CupertinoIcons.bitcoin_circle,
+                      size: 18, color: Color(0xFF8E8E93)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      acc == null
+                          ? 'No Ethereum account set up'
+                          : '${_modeLabel(acc.mode)} · ${_short(acc.address)}',
+                      style:
+                          const TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                  ),
+                  CupertinoButton(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 4),
+                    minSize: 0,
+                    color: const Color(0xFF2C2C2E),
+                    borderRadius: BorderRadius.circular(8),
+                    onPressed: _manageAccount,
+                    child: Text(acc == null ? 'Set up' : 'Manage',
+                        style: const TextStyle(fontSize: 13)),
+                  ),
+                ],
               ),
-              if (addr != null) ...[
-                const SizedBox(height: 8),
+              if (acc != null) ...[
+                const SizedBox(height: 10),
                 Text('ETH ${_wei(_service.ethBalanceWei)}   ·   '
                     'wOCT ${_micro(_service.woctBalanceRaw)}',
                     style: const TextStyle(
@@ -260,6 +290,13 @@ class _BridgeScreenState extends State<BridgeScreen> {
       },
     );
   }
+
+  static String _modeLabel(EthAccountMode mode) => switch (mode) {
+        EthAccountMode.derived => 'Seed wallet',
+        EthAccountMode.imported => 'Imported key',
+        EthAccountMode.walletConnect => 'WalletConnect',
+        EthAccountMode.manual => 'Watch address',
+      };
 
   Widget _historySection() {
     return AnimatedBuilder(

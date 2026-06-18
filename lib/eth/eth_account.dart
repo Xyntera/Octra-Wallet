@@ -8,12 +8,14 @@ import 'eth_constants.dart';
 
 /// How the app obtains the Ethereum key/recipient for bridge operations.
 ///
-/// - [derived]: an in-app account derived from the wallet's BIP39 mnemonic; the
-///   app holds the key and can sign ETH/bridge transactions.
+/// - [derived]: an in-app account created from a BIP39 seed phrase; the app
+///   holds the key and can sign ETH/bridge transactions.
+/// - [imported]: an in-app account imported from a raw private key; signs
+///   in-app like [derived].
 /// - [walletConnect]: an external wallet (e.g. MetaMask) paired over
 ///   WalletConnect; the app never holds the key and the user signs externally.
 /// - [manual]: a user-entered address used only as a destination (cannot sign).
-enum EthAccountMode { derived, walletConnect, manual }
+enum EthAccountMode { derived, imported, walletConnect, manual }
 
 /// An Ethereum account usable by the bridge. Only [derived] accounts can sign;
 /// [walletConnect] signs externally and [manual] is recipient-only.
@@ -53,11 +55,29 @@ class EthAccount {
     );
   }
 
+  /// An in-app account imported from a raw private key (with or without 0x).
+  factory EthAccount.fromPrivateKey(String privateKeyHex) {
+    var clean = privateKeyHex.trim();
+    if (clean.startsWith('0x') || clean.startsWith('0X')) {
+      clean = clean.substring(2);
+    }
+    if (clean.length != 64) {
+      throw ArgumentError('private key must be 32 bytes (64 hex chars)');
+    }
+    final creds = EthPrivateKey.fromHex(clean);
+    return EthAccount(
+      mode: EthAccountMode.imported,
+      address: creds.address.hexEip55,
+      credentials: creds,
+    );
+  }
+
   /// A recipient-only account from a user-entered address. Throws
   /// [ArgumentError] if [input] is not a valid Ethereum address.
-  factory EthAccount.fromAddress(String input) {
+  factory EthAccount.fromAddress(String input,
+      {EthAccountMode mode = EthAccountMode.manual}) {
     final addr = EthereumAddress.fromHex(input.trim());
-    return EthAccount(mode: EthAccountMode.manual, address: addr.hexEip55);
+    return EthAccount(mode: mode, address: addr.hexEip55);
   }
 
   /// Validate an Ethereum address (accepts with/without EIP-55 checksum).

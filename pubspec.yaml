@@ -27,6 +27,10 @@ dependencies:
   crypto: ^3.0.3
   ffi: ^2.1.3
 
+  # Ethereum wallet + OCT<->wOCT bridge
+  web3dart: ^2.7.3
+  bip32: ^2.0.0
+
   # UI / Assets
   google_fonts: ^8.1.0
   cupertino_icons: ^1.0.8

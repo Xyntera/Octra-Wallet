@@ -11,7 +11,7 @@ import 'eth_abi.dart';
 import 'eth_account.dart';
 import 'eth_constants.dart';
 import 'eth_rpc.dart';
-import 'eth_signer.dart';
+import 'eth_tx_sender.dart';
 
 /// Orchestrates the OCT <-> wOCT bridge: builds/submits the Octra lock, drives
 /// the relayer claim flow on Ethereum (wrap), and the approve/burn flow
@@ -22,7 +22,6 @@ class BridgeService extends ChangeNotifier {
   final WalletController wallet;
   final EthRpc _eth;
   final BridgeRelayer _relayer;
-  final EthSigner _signer;
   final FlutterSecureStorage _storage;
 
   static const _historyKey = 'bridge_history';
@@ -38,11 +37,9 @@ class BridgeService extends ChangeNotifier {
     required this.wallet,
     EthRpc? eth,
     BridgeRelayer? relayer,
-    EthSigner? signer,
     FlutterSecureStorage? storage,
   })  : _eth = eth ?? EthRpc(),
         _relayer = relayer ?? BridgeRelayer(),
-        _signer = signer ?? EthSigner(),
         _storage = storage ?? const FlutterSecureStorage();
 
   // ---- history persistence -------------------------------------------------
@@ -175,10 +172,7 @@ class BridgeService extends ChangeNotifier {
 
   /// Step 3: claim wOCT on Ethereum (derived-account signing). The relayer's
   /// opaque calldata is fetched fresh and submitted to the bridge.
-  Future<BridgeRecord> claim(BridgeRecord rec, EthAccount account) async {
-    if (!account.canSign) {
-      throw StateError('connect or derive an Ethereum account to claim');
-    }
+  Future<BridgeRecord> claim(BridgeRecord rec, EthTxSender sender) async {
     final epoch = rec.epoch;
     if (epoch == null) throw StateError('record has no epoch');
     final calldata =
@@ -186,13 +180,12 @@ class BridgeService extends ChangeNotifier {
     if (calldata == null) throw StateError('claim calldata unavailable');
 
     _upsert(rec.copyWith(status: BridgeStatus.submitting));
-    final hash = await _signer.sendCall(
-      account: account,
+    final hash = await sender.sendCall(
       to: EthConstants.ethereumBridge,
       dataHex: calldata,
       gasLimit: EthConstants.claimGasLimit,
     );
-    final ok = await _signer.waitForSuccess(hash);
+    final ok = await sender.waitForSuccess(hash);
     final updated = rec.copyWith(
       claimTxHash: hash,
       status: ok == true ? BridgeStatus.completed : BridgeStatus.failed,
@@ -208,13 +201,10 @@ class BridgeService extends ChangeNotifier {
   /// approve(bridge, amount) then burn(octraRecipient, amount). OCT is then
   /// released on Octra by the relayer (poll the wallet balance separately).
   Future<BridgeRecord> startUnwrap({
-    required EthAccount account,
+    required EthTxSender sender,
     required String octraRecipient,
     required int microOct,
   }) async {
-    if (!account.canSign) {
-      throw StateError('connect or derive an Ethereum account to unwrap');
-    }
     final recip = octraRecipient.trim();
     if (recip.length != 47 || !recip.startsWith('oct')) {
       throw StateError('invalid Octra recipient');
@@ -225,7 +215,7 @@ class BridgeService extends ChangeNotifier {
       id: 'u_${DateTime.now().millisecondsSinceEpoch}',
       direction: BridgeDirection.unwrap,
       amountRaw: microOct.toString(),
-      ethAddress: account.address,
+      ethAddress: sender.address,
       octraAddress: recip,
       status: BridgeStatus.submitting,
       createdAt: DateTime.now().millisecondsSinceEpoch,
@@ -233,13 +223,12 @@ class BridgeService extends ChangeNotifier {
     _upsert(rec);
 
     // 1. approve
-    final approveHash = await _signer.sendCall(
-      account: account,
+    final approveHash = await sender.sendCall(
       to: EthConstants.wOctToken,
       dataHex: EthAbi.approve(EthConstants.ethereumBridge, amount),
       gasLimit: EthConstants.approveGasLimit,
     );
-    if (await _signer.waitForSuccess(approveHash) != true) {
+    if (await sender.waitForSuccess(approveHash) != true) {
       final failed = rec.copyWith(
           approveTxHash: approveHash,
           status: BridgeStatus.failed,
@@ -249,13 +238,12 @@ class BridgeService extends ChangeNotifier {
     }
 
     // 2. burn
-    final burnHash = await _signer.sendCall(
-      account: account,
+    final burnHash = await sender.sendCall(
       to: EthConstants.ethereumBridge,
       dataHex: EthAbi.burn(recip, amount),
       gasLimit: EthConstants.burnGasLimit,
     );
-    final burnOk = await _signer.waitForSuccess(burnHash);
+    final burnOk = await sender.waitForSuccess(burnHash);
     final updated = rec.copyWith(
       approveTxHash: approveHash,
       burnTxHash: burnHash,
@@ -263,7 +251,7 @@ class BridgeService extends ChangeNotifier {
       error: burnOk == true ? null : 'burn not confirmed',
     );
     _upsert(updated);
-    await refreshBalances(account.address);
+    await refreshBalances(sender.address);
     return updated;
   }
 
@@ -285,7 +273,6 @@ class BridgeService extends ChangeNotifier {
   void dispose() {
     _eth.dispose();
     _relayer.dispose();
-    _signer.dispose();
     super.dispose();
   }
 }

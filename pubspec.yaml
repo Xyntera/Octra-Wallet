@@ -30,6 +30,7 @@ dependencies:
   # Ethereum wallet + OCT<->wOCT bridge
   web3dart: ^2.7.3
   bip32: ^2.0.0
+  walletconnect_flutter_v2: ^2.4.1
 
   # UI / Assets
   google_fonts: ^8.1.0

@@ -3,12 +3,16 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors;
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../eth/bridge_models.dart';
 import '../eth/bridge_service.dart';
 import '../eth/eth_account.dart';
 import '../eth/eth_constants.dart';
+import '../eth/eth_tx_sender.dart';
 import '../eth/eth_wallet_store.dart';
+import '../eth/eth_walletconnect.dart';
 import '../wallet.dart';
 import 'eth_account_sheet.dart';
 
@@ -28,10 +32,21 @@ class _BridgeScreenState extends State<BridgeScreen> {
 
   BridgeDirection _direction = BridgeDirection.wrap;
   final EthWalletStore _store = EthWalletStore();
+  final WcService _wc = WcService();
   bool _working = false;
   String? _status;
 
   EthAccount? get _ethAccount => _store.account;
+
+  /// Builds a transaction sender for the active account, or null if it cannot
+  /// sign (no account / watch-only address / WalletConnect not yet paired).
+  EthTxSender? _senderFor(EthAccount? acc) {
+    if (acc == null) return null;
+    if (acc.mode == EthAccountMode.walletConnect) {
+      return _wc.isConnected ? WalletConnectSender(_wc) : null;
+    }
+    return acc.canSign ? LocalEthSender(acc) : null;
+  }
 
   @override
   void initState() {
@@ -59,9 +74,105 @@ class _BridgeScreenState extends State<BridgeScreen> {
 
   Future<void> _manageAccount() async {
     await Navigator.of(context).push(CupertinoPageRoute(
-      builder: (_) => buildEthAccountScreen(_store),
+      builder: (_) =>
+          buildEthAccountScreen(_store, onConnect: _connectWalletConnect),
     ));
     if (mounted) setState(() {});
+  }
+
+  Future<void> _connectWalletConnect() async {
+    if (!_wc.isConfigured) {
+      _showInfo('WalletConnect',
+          'Set a WalletConnect project id at build time:\n'
+          'flutter build … --dart-define=WC_PROJECT_ID=<id from cloud.reown.com>');
+      return;
+    }
+    final uri = await _wc.beginConnect(
+      onConnected: (addr) async {
+        await _store.setWalletConnect(addr);
+      },
+    );
+    if (uri.isEmpty || !mounted) return;
+    await _showWcSheet(uri);
+  }
+
+  Future<void> _showWcSheet(String uri) {
+    return showCupertinoModalPopup<void>(
+      context: context,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1C1C1E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: const Color(0xFF48484A),
+                      borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 16),
+              const Text('Connect a wallet',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              const Text('Scan with MetaMask or another WalletConnect wallet',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Color(0xFF8E8E93), fontSize: 13)),
+              const SizedBox(height: 18),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14)),
+                child: QrImageView(data: uri, size: 220),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: CupertinoButton.filled(
+                  onPressed: () async {
+                    final u = Uri.tryParse(uri);
+                    if (u != null) {
+                      await launchUrl(u, mode: LaunchMode.externalApplication);
+                    }
+                  },
+                  child: const Text('Open in wallet app'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              CupertinoButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Done'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showInfo(String title, String message) {
+    showCupertinoDialog<void>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK')),
+        ],
+      ),
+    );
   }
 
   @override
@@ -123,8 +234,8 @@ class _BridgeScreenState extends State<BridgeScreen> {
           }
         }).catchError((_) {/* stays pending in history */}));
       } else {
-        final account = _ethAccount;
-        if (account == null || !account.canSign) {
+        final sender = _senderFor(_ethAccount);
+        if (sender == null) {
           throw StateError(
               'Unwrap needs an Ethereum account that can sign. Tap Manage to '
               'create, import, or connect one.');
@@ -132,11 +243,15 @@ class _BridgeScreenState extends State<BridgeScreen> {
         if (recipient.length != 47 || !recipient.startsWith('oct')) {
           throw StateError('Enter a valid Octra recipient.');
         }
-        await _service.startUnwrap(
-          account: account,
-          octraRecipient: recipient,
-          microOct: micro,
-        );
+        try {
+          await _service.startUnwrap(
+            sender: sender,
+            octraRecipient: recipient,
+            microOct: micro,
+          );
+        } finally {
+          sender.dispose();
+        }
         setState(() => _status =
             'Burned wOCT. OCT will be released to your Octra address shortly.');
       }
@@ -148,18 +263,20 @@ class _BridgeScreenState extends State<BridgeScreen> {
   }
 
   Future<void> _claim(BridgeRecord rec) async {
-    final account = _ethAccount;
-    if (account == null || !account.canSign) {
-      setState(() => _status = 'No in-app Ethereum account to claim with.');
+    final sender = _senderFor(_ethAccount);
+    if (sender == null) {
+      setState(() =>
+          _status = 'Set up a signing Ethereum account to claim (Manage).');
       return;
     }
     setState(() => _working = true);
     try {
-      await _service.claim(rec, account);
+      await _service.claim(rec, sender);
       setState(() => _status = 'Claimed wOCT.');
     } catch (e) {
       setState(() => _status = _clean(e));
     } finally {
+      sender.dispose();
       if (mounted) setState(() => _working = false);
     }
   }

@@ -54,6 +54,9 @@ jobs:
 
   native-host:
     name: Native host PVAC build
+    # Heavy build: only on main, PRs, or manual dispatch — not on every
+    # feature-branch commit.
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout wallet
@@ -80,6 +83,8 @@ jobs:
 
   android-apk:
     name: Android APK
+    # Heavy build (NDK + OpenSSL): only on main, PRs, or manual dispatch.
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     env:
       ANDROID_API: "24"
@@ -157,6 +162,8 @@ jobs:
 
   ios-native:
     name: iOS native static libraries
+    # Heavy build on a macOS runner: only on main, PRs, or manual dispatch.
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: macos-14
     steps:
       - name: Checkout wallet

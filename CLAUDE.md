@@ -94,9 +94,9 @@ Nonces are computed as `max(on-chain nonce, max staged nonce) + 1`. The staging 
 ### Wallet Persistence
 
 `flutter_secure_storage` is the only persistence layer. Keys used:
-- `wallets` — JSON array of all wallets
+- `wallets` — JSON array of all wallets (or the encrypted `wallet_vault` when a PIN is set)
 - `last_selected_wallet` — address string
-- `user_pin` — raw PIN string
+- `pin_verifier_salt` / `pin_verifier_hash` — PIN salt + SHA-256(salt|pin) verifier; the PIN is **never** stored in plaintext. The vault key is derived from the PIN via PBKDF2 (`utils/vault.dart`). A legacy `user_pin` key, if present from old installs, is migrated to this scheme and deleted.
 - `security_enabled` — boolean string
 - `custom_tokens_<address>` — JSON array of custom token contract addresses per wallet
 

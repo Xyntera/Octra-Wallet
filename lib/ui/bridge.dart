@@ -286,12 +286,14 @@ class _BridgeScreenState extends State<BridgeScreen> {
     return CupertinoPageScaffold(
       backgroundColor: Colors.black,
       navigationBar: const CupertinoNavigationBar(
-        middle: Text('Bridge  ·  OCT ⇄ wOCT'),
+        middle: Text('Bridge · OCT ⇄ wOCT · Beta'),
       ),
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            _betaBanner(),
+            const SizedBox(height: 16),
             CupertinoSlidingSegmentedControl<BridgeDirection>(
               groupValue: _direction,
               onValueChanged: (v) {
@@ -350,6 +352,33 @@ class _BridgeScreenState extends State<BridgeScreen> {
             _historySection(),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _betaBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF9F0A).withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(12),
+        border:
+            Border.all(color: const Color(0xFFFF9F0A).withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          const Icon(CupertinoIcons.exclamationmark_triangle_fill,
+              color: Color(0xFFFF9F0A), size: 18),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'Beta · Ethereum mainnet. This bridge moves real funds and has not '
+              'been fully tested end-to-end — try a tiny amount first.',
+              style: TextStyle(
+                  color: Color(0xFFFFD60A), fontSize: 12.5, height: 1.3),
+            ),
+          ),
+        ],
       ),
     );
   }

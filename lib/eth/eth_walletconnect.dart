@@ -1,9 +1,12 @@
 import 'package:walletconnect_flutter_v2/walletconnect_flutter_v2.dart';
 
-/// WalletConnect project id. Provide at build time:
-///   flutter build ... --dart-define=WC_PROJECT_ID=<id from cloud.reown.com>
-const String kWalletConnectProjectId =
-    String.fromEnvironment('WC_PROJECT_ID', defaultValue: '');
+/// WalletConnect / Reown project id. A public client identifier (safe to
+/// embed); override at build time with
+///   flutter build … --dart-define=WC_PROJECT_ID=<id from cloud.reown.com>
+const String kWalletConnectProjectId = String.fromEnvironment(
+  'WC_PROJECT_ID',
+  defaultValue: '47448c64c8b30f433cb48b5859579a7c',
+);
 
 /// Thin WalletConnect v2 dApp client used for the "connect external wallet"
 /// (MetaMask, etc.) bridge mode: the app builds transactions; the user signs in

@@ -238,7 +238,17 @@ jobs:
         shell: pwsh
         run: |
           $version = (Select-String -Path pubspec.yaml -Pattern '^version: (.+)').Matches[0].Groups[1].Value -replace '\+.*', ''
-          & "C:\Program Files (x86)\NSIS\makensis.exe" "/DVERSION=$version" windows\installer.nsi
+          $src = Join-Path $PWD 'build\windows\x64\runner\Release'
+          $out = Join-Path $PWD 'Octra-Wallet-Setup.exe'
+          if (!(Test-Path "$src\octra_core.dll")) {
+            Write-Error "Build output not found at $src"
+            exit 1
+          }
+          & "C:\Program Files (x86)\NSIS\makensis.exe" "/DVERSION=$version" "/DSRCDIR=$src" "/DOUTFILE=$out" windows\installer.nsi
+          if (!(Test-Path $out)) {
+            Write-Error "Installer was not produced"
+            exit 1
+          }
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4

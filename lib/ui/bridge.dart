@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors;
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -32,7 +33,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
   final _txHashCtrl = TextEditingController();
 
   BridgeDirection _direction = BridgeDirection.wrap;
-  final EthWalletStore _store = EthWalletStore();
+  late final EthWalletStore _store;
   final WcService _wc = WcService();
   bool _working = false;
   String? _status;
@@ -52,9 +53,9 @@ class _BridgeScreenState extends State<BridgeScreen> {
     super.initState();
     _wallet = context.read<WalletController>();
     _service = BridgeService(wallet: _wallet);
+    _store = context.read<EthWalletStore>();
     _store.addListener(_onAccountChanged);
     _service.loadHistory();
-    _store.load();
   }
 
   void _onAccountChanged() {
@@ -63,8 +64,8 @@ class _BridgeScreenState extends State<BridgeScreen> {
     final addr = _store.account?.address;
     if (addr != null) {
       _service.refreshBalances(addr);
-      // Auto-detect claimable wraps from the relayer recovery feed.
       unawaited(_service.resumePendingWraps(addr));
+      unawaited(_store.refreshBalances());
     }
     setState(() {});
   }
@@ -86,79 +87,35 @@ class _BridgeScreenState extends State<BridgeScreen> {
   Future<void> _connectWalletConnect() async {
     if (!_wc.isConfigured) {
       _showInfo('WalletConnect',
-          'Set a WalletConnect project id at build time:\n'
-          'flutter build … --dart-define=WC_PROJECT_ID=<id from cloud.reown.com>');
+          'WalletConnect project id is not configured.');
       return;
     }
     final uri = await _wc.beginConnect(
       onConnected: (addr) async {
         await _store.setWalletConnect(addr);
+        await _store.refreshBalances();
       },
     );
     if (uri.isEmpty || !mounted) return;
-    await _showWcSheet(uri);
+    await _showWalletPickerSheet(uri);
   }
 
-  Future<void> _showWcSheet(String uri) {
+  // List of popular EVM wallets for the picker
+  static const _evmWallets = [
+    _WalletInfo('MetaMask',    Color(0xFFF6851B), 'M',  'metamask://wc?uri=',        'https://metamask.app.link/wc?uri='),
+    _WalletInfo('Trust',       Color(0xFF3375BB), 'T',  'trust://wc?uri=',           'https://link.trustwallet.com/wc?uri='),
+    _WalletInfo('Coinbase',    Color(0xFF1652F0), 'C',  'cbwallet://wc?uri=',        'https://go.cb-w.com/wc?uri='),
+    _WalletInfo('Rainbow',     Color(0xFF032BEE), 'R',  'rainbow://wc?uri=',         'https://rnbwapp.com/wc?uri='),
+    _WalletInfo('1inch',       Color(0xFFE62B57), '1',  'oneinch-wallet://wc?uri=',  null),
+    _WalletInfo('Zerion',      Color(0xFF2962FF), 'Z',  'zerion://wc?uri=',          null),
+    _WalletInfo('OKX',         Color(0xFF1A1A1A), 'OK', 'okx://wc?uri=',             null),
+    _WalletInfo('Phantom',     Color(0xFF4E44CE), 'P',  'phantom://wc?uri=',         null),
+  ];
+
+  Future<void> _showWalletPickerSheet(String wcUri) {
     return showCupertinoModalPopup<void>(
       context: context,
-      builder: (ctx) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF1C1C1E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                      color: const Color(0xFF48484A),
-                      borderRadius: BorderRadius.circular(2))),
-              const SizedBox(height: 16),
-              const Text('Connect a wallet',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              const Text('Scan with MetaMask or another WalletConnect wallet',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Color(0xFF8E8E93), fontSize: 13)),
-              const SizedBox(height: 18),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14)),
-                child: QrImageView(data: uri, size: 220),
-              ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                child: CupertinoButton.filled(
-                  onPressed: () async {
-                    final u = Uri.tryParse(uri);
-                    if (u != null) {
-                      await launchUrl(u, mode: LaunchMode.externalApplication);
-                    }
-                  },
-                  child: const Text('Open in wallet app'),
-                ),
-              ),
-              const SizedBox(height: 8),
-              CupertinoButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Done'),
-              ),
-            ],
-          ),
-        ),
-      ),
+      builder: (ctx) => _WalletPickerSheet(wcUri: wcUri),
     );
   }
 
@@ -924,6 +881,209 @@ class _GasSpeedSheetState extends State<_GasSpeedSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─── EVM wallet deep-link info ────────────────────────────────────────────────
+class _WalletInfo {
+  final String name;
+  final Color color;
+  final String letter;
+  final String schemePrefix;
+  final String? universalPrefix;
+  const _WalletInfo(this.name, this.color, this.letter, this.schemePrefix, this.universalPrefix);
+}
+
+// ─── WalletConnect wallet picker sheet ────────────────────────────────────────
+class _WalletPickerSheet extends StatefulWidget {
+  final String wcUri;
+  const _WalletPickerSheet({required this.wcUri});
+  @override
+  State<_WalletPickerSheet> createState() => _WalletPickerSheetState();
+}
+
+class _WalletPickerSheetState extends State<_WalletPickerSheet> {
+  bool _showQr = false;
+
+  Future<void> _openWallet(_WalletInfo info) async {
+    final encoded = Uri.encodeComponent(widget.wcUri);
+    final urls = [
+      if (info.universalPrefix != null) '${info.universalPrefix}$encoded',
+      '${info.schemePrefix}$encoded',
+    ];
+    for (final raw in urls) {
+      final uri = Uri.tryParse(raw);
+      if (uri == null) continue;
+      try {
+        final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (launched) return;
+      } catch (_) {}
+    }
+    if (mounted) setState(() => _showQr = true);
+  }
+
+  Future<void> _copyUri() async {
+    await Clipboard.setData(ClipboardData(text: widget.wcUri));
+    if (mounted) HapticFeedback.selectionClick();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C1E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // drag handle
+              Container(width: 36, height: 4, decoration: BoxDecoration(color: const Color(0xFF48484A), borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 20),
+              // header
+              const Text('Connect EVM Wallet', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              const Text('Choose a wallet app to connect', textAlign: TextAlign.center,
+                  style: TextStyle(color: Color(0xFF8E8E93), fontSize: 13.5)),
+              const SizedBox(height: 24),
+              if (!_showQr) ...[
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 0.8,
+                  ),
+                  itemCount: _BridgeScreenState._evmWallets.length,
+                  itemBuilder: (_, i) => _WalletTile(
+                    info: _BridgeScreenState._evmWallets[i],
+                    onTap: () => _openWallet(_BridgeScreenState._evmWallets[i]),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                GestureDetector(
+                  onTap: () => setState(() => _showQr = true),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2C2C2E),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(CupertinoIcons.qrcode, color: Color(0xFF8E8E93), size: 20),
+                        SizedBox(width: 8),
+                        Text('Scan QR Code', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                  ),
+                ),
+              ] else ...[
+                GestureDetector(
+                  onTap: () => setState(() => _showQr = false),
+                  child: const Row(
+                    children: [
+                      Icon(CupertinoIcons.chevron_left, color: Color(0xFF0A84FF), size: 16),
+                      SizedBox(width: 4),
+                      Text('Back to wallets', style: TextStyle(color: Color(0xFF0A84FF), fontSize: 14)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text('Scan with any WalletConnect wallet', textAlign: TextAlign.center,
+                    style: TextStyle(color: Color(0xFF8E8E93), fontSize: 13)),
+                const SizedBox(height: 12),
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+                    child: QrImageView(data: widget.wcUri, size: 200),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              GestureDetector(
+                onTap: _copyUri,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFF3A3A3C)),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(CupertinoIcons.link, color: Color(0xFF8E8E93), size: 16),
+                      SizedBox(width: 8),
+                      Text('Copy connection link', style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              CupertinoButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel', style: TextStyle(color: Color(0xFF8E8E93))),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WalletTile extends StatelessWidget {
+  final _WalletInfo info;
+  final VoidCallback onTap;
+  const _WalletTile({required this.info, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: info.color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: info.color.withValues(alpha: 0.3), width: 1.5),
+            ),
+            child: Center(
+              child: Text(
+                info.letter,
+                style: TextStyle(
+                  color: info.color,
+                  fontSize: info.letter.length > 1 ? 13 : 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            info.name,
+            style: const TextStyle(color: Color(0xFFAEAEB2), fontSize: 11.5),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }

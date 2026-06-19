@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'wallet.dart';
+import 'eth/eth_wallet_store.dart';
 import 'ui/wallet_setup.dart';
 import 'ui/home.dart';
 import 'ui/pin_screen.dart';
@@ -14,10 +15,14 @@ void main() async {
   final walletController = WalletController();
   await walletController.init();
 
+  final ethWalletStore = EthWalletStore();
+  await ethWalletStore.load();
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => walletController),
+        ChangeNotifierProvider(create: (_) => ethWalletStore),
       ],
       child: const OctraWalletApp(),
     ),

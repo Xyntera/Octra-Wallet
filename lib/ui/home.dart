@@ -21,6 +21,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../wallet.dart';
+import '../eth/eth_wallet_store.dart';
 import 'bridge.dart';
 import 'wallet_setup.dart';
 import 'pin_screen.dart';
@@ -580,6 +581,8 @@ class _DashboardTabState extends State<DashboardTab> {
                     ],
                   ).animate().fadeIn(delay: 200.ms),
                   ), // RepaintBoundary
+                  const SizedBox(height: 12),
+                  _EvmWalletCard(),
                   const SizedBox(height: 40),
                 ],
               ),
@@ -3018,6 +3021,131 @@ class _ActionButtonState extends State<_ActionButton> {
                 style: GoogleFonts.outfit(color: Colors.white, fontSize: 13)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── EVM Wallet quick card ─────────────────────────────────────────────────────
+class _EvmWalletCard extends StatelessWidget {
+  const _EvmWalletCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.watch<EthWalletStore>();
+    final acc = store.account;
+    const brand = Color(0xFF0A84FF);
+
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        CupertinoPageRoute(builder: (_) => const BridgeScreen()),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              const Color(0xFF0A84FF).withValues(alpha: 0.12),
+              const Color(0xFF5E5CE6).withValues(alpha: 0.08),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF0A84FF).withValues(alpha: 0.25)),
+        ),
+        child: acc == null
+            ? Row(
+                children: [
+                  Container(
+                    width: 40, height: 40,
+                    decoration: BoxDecoration(
+                      color: _brand.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(CupertinoIcons.link_circle_fill, color: _brand, size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('EVM Wallet', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+                        SizedBox(height: 2),
+                        Text('Set up to bridge OCT ↔ wOCT', style: TextStyle(color: Color(0xFF8E8E93), fontSize: 12.5)),
+                      ],
+                    ),
+                  ),
+                  const Icon(CupertinoIcons.chevron_right, color: Color(0xFF48484A), size: 16),
+                ],
+              )
+            : Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          color: _brand.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(CupertinoIcons.link_circle_fill, color: _brand, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('EVM Wallet', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+                            Text(
+                              '${acc.address.substring(0, 6)}…${acc.address.substring(acc.address.length - 4)}',
+                              style: const TextStyle(color: Color(0xFF8E8E93), fontSize: 12, fontFamily: 'monospace'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(CupertinoIcons.chevron_right, color: Color(0xFF48484A), size: 16),
+                    ],
+                  ),
+                  if (store.ethBalanceWei > BigInt.zero || store.woctBalanceRaw > BigInt.zero) ...[
+                    const SizedBox(height: 12),
+                    Container(height: 1, color: Colors.white10),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('ETH', style: TextStyle(color: Color(0xFF8E8E93), fontSize: 11)),
+                              Text(
+                                (store.ethBalanceWei.toDouble() / 1e18).toStringAsFixed(5),
+                                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(width: 1, height: 30, color: Colors.white10),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('wOCT', style: TextStyle(color: Color(0xFF8E8E93), fontSize: 11)),
+                                Text(
+                                  (store.woctBalanceRaw.toDouble() / 1e6).toStringAsFixed(4),
+                                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
       ),
     );
   }

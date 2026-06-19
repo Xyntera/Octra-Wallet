@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'eth_account.dart';
+import 'eth_rpc.dart';
 
 /// Persists the user's Ethereum account for the bridge across the four modes
 /// (create / import seed / import key / enter address / WalletConnect), and
@@ -138,5 +139,25 @@ class EthWalletStore extends ChangeNotifier {
     final mode = await _storage.read(key: _kMode);
     if (mode != 'derived') return null;
     return _storage.read(key: _kSecret);
+  }
+
+  // Balance snapshot (populated by refreshBalances, used by home/portfolio cards)
+  BigInt ethBalanceWei = BigInt.zero;
+  BigInt woctBalanceRaw = BigInt.zero;
+  bool isRefreshingBalances = false;
+
+  Future<void> refreshBalances() async {
+    final addr = account?.address;
+    if (addr == null) return;
+    isRefreshingBalances = true;
+    notifyListeners();
+    try {
+      final rpc = EthRpc();
+      ethBalanceWei = await rpc.ethBalanceWei(addr);
+      woctBalanceRaw = await rpc.woctBalance(addr);
+      rpc.dispose();
+    } catch (_) {}
+    isRefreshingBalances = false;
+    notifyListeners();
   }
 }

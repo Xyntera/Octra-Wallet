@@ -3060,10 +3060,10 @@ class _EvmWalletCard extends StatelessWidget {
                   Container(
                     width: 40, height: 40,
                     decoration: BoxDecoration(
-                      color: _brand.withValues(alpha: 0.15),
+                      color: brand.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(CupertinoIcons.link_circle_fill, color: _brand, size: 22),
+                    child: const Icon(CupertinoIcons.link_circle_fill, color: brand, size: 22),
                   ),
                   const SizedBox(width: 14),
                   const Expanded(
@@ -3086,10 +3086,10 @@ class _EvmWalletCard extends StatelessWidget {
                       Container(
                         width: 40, height: 40,
                         decoration: BoxDecoration(
-                          color: _brand.withValues(alpha: 0.15),
+                          color: brand.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(CupertinoIcons.link_circle_fill, color: _brand, size: 22),
+                        child: const Icon(CupertinoIcons.link_circle_fill, color: brand, size: 22),
                       ),
                       const SizedBox(width: 12),
                       Expanded(

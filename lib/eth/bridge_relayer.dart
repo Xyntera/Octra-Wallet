@@ -84,8 +84,12 @@ class BridgeRelayer {
     return null;
   }
 
-  /// Recovery feed keyed by lowercased ETH address. Returns lock entries for
-  /// [ethAddress] (each has `tx_hash`, `epoch`, `amount_raw`, `found_at`).
+  /// Fetches the recovery feed and returns lock entries for [ethAddress].
+  ///
+  /// The feed structure is:
+  ///   `{ by_recipient: { "0xlower...": [{epoch, leaf_index, amount_raw,
+  ///     src_nonce, message_id, tx_hash, found_at}] } }`
+  ///
   /// Returns an empty list on network or parse error.
   Future<List<Map<String, dynamic>>> fetchRecovery(String ethAddress) async {
     try {
@@ -96,7 +100,10 @@ class BridgeRelayer {
       if (res.statusCode != 200) return const [];
       final data = jsonDecode(res.body);
       if (data is! Map) return const [];
-      final entries = data[ethAddress.toLowerCase()];
+      // The feed nests entries under `by_recipient`.
+      final byRecipient = data['by_recipient'];
+      if (byRecipient is! Map) return const [];
+      final entries = byRecipient[ethAddress.toLowerCase()];
       if (entries is! List) return const [];
       return entries
           .whereType<Map>()
@@ -105,6 +112,38 @@ class BridgeRelayer {
     } catch (_) {
       return const [];
     }
+  }
+
+  /// Scans the full recovery feed for an entry matching [lockTxHash] (with or
+  /// without `0x` prefix). Returns the entry or null if not found.
+  Future<Map<String, dynamic>?> findRecoveryByTxHash(
+    String lockTxHash,
+  ) async {
+    try {
+      final res = await _client.get(
+        Uri.parse(EthConstants.recoveryUrl),
+        headers: const {'accept': 'application/json'},
+      );
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body);
+      if (data is! Map) return null;
+      final byRecipient = data['by_recipient'];
+      if (byRecipient is! Map) return null;
+      final normalised = lockTxHash.toLowerCase().replaceAll('0x', '');
+      for (final entries in byRecipient.values) {
+        if (entries is! List) continue;
+        for (final e in entries) {
+          if (e is! Map) continue;
+          final th = (e['tx_hash'] as String? ?? '').toLowerCase();
+          if (th == normalised) {
+            return Map<String, dynamic>.from(e)
+              ..['eth_address'] =
+                  byRecipient.entries.firstWhere((kv) => kv.value == entries).key;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   void dispose() => _client.close();

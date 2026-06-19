@@ -97,8 +97,13 @@ class BridgeService extends ChangeNotifier {
   Future<BigInt> currentGasPrice() => _eth.gasPrice();
 
   /// Checks the relayer recovery feed for [ethAddress] and advances any pending
-  /// wrap records to [BridgeStatus.claimable] if the epoch header is live on
-  /// Ethereum. Call this when the bridge screen opens or on manual refresh.
+  /// wrap records to [BridgeStatus.claimable] (or [BridgeStatus.completed] if
+  /// already claimed on-chain). Call this when the bridge screen opens or on
+  /// manual refresh.
+  ///
+  /// Claim calldata is built client-side from the recovery feed data using
+  /// the `verifyAndMint` ABI — this matches the mechanism used by
+  /// bridge.0xio.xyz and does not require the relayer's RPC.
   Future<void> resumePendingWraps(String ethAddress) async {
     final pending = _history
         .where((r) =>
@@ -114,43 +119,113 @@ class BridgeService extends ChangeNotifier {
     } catch (_) {}
 
     for (var rec in pending) {
-      String? epoch = rec.epoch;
-
-      // Try to find the epoch via recovery.json if not already known.
-      if (epoch == null) {
-        for (final entry in recovery) {
-          final th = entry['tx_hash']?.toString() ?? '';
-          final lh = rec.lockTxHash ?? '';
-          if (th == lh ||
-              '0x$th' == lh ||
-              th == lh.replaceAll('0x', '').replaceAll('0X', '')) {
-            epoch = entry['epoch']?.toString();
-            if (epoch != null) {
-              rec = rec.copyWith(epoch: epoch);
-              _upsert(rec);
-            }
-            break;
-          }
+      // Find matching recovery entry by tx_hash (no 0x prefix in the feed).
+      Map<String, dynamic>? entry;
+      final lockHash =
+          (rec.lockTxHash ?? '').toLowerCase().replaceAll('0x', '');
+      for (final e in recovery) {
+        final th = (e['tx_hash'] as String? ?? '').toLowerCase();
+        if (th == lockHash) {
+          entry = e;
+          break;
         }
       }
+      if (entry == null) continue;
 
-      if (epoch == null) continue;
+      final epochStr = entry['epoch']?.toString();
+      final epoch = epochStr != null ? int.tryParse(epochStr) : null;
+      final srcNonce = entry['src_nonce'] is num
+          ? (entry['src_nonce'] as num).toInt()
+          : int.tryParse(entry['src_nonce']?.toString() ?? '');
+      final amountRaw = BigInt.tryParse(
+          entry['amount_raw']?.toString() ?? rec.amountRaw);
 
-      // Fetch claim calldata; if available verify it doesn't revert on-chain.
-      try {
-        final calldata =
-            await _relayer.claimCalldataForRecipient(epoch, rec.ethAddress);
-        if (calldata != null) {
-          try {
-            await _eth.call(EthConstants.ethereumBridge, calldata);
-            _upsert(rec.copyWith(status: BridgeStatus.claimable));
-          } catch (_) {
-            // Header not yet finalized on Ethereum — leave as pending.
-          }
-        }
-      } catch (_) {
-        // Relayer not ready — leave as pending.
+      if (epoch == null || srcNonce == null || amountRaw == null) continue;
+
+      // Persist epoch + srcNonce so the record can claim without the feed.
+      if (rec.epoch == null || rec.srcNonce == null) {
+        rec = rec.copyWith(epoch: epoch.toString(), srcNonce: srcNonce);
+        _upsert(rec);
       }
+
+      // Build verifyAndMint calldata locally and simulate it.
+      await _checkClaimable(rec, epoch, amountRaw, srcNonce);
+    }
+  }
+
+  /// Looks up [lockTxHash] in the global recovery feed (all recipients) and
+  /// creates/updates a [BridgeRecord] for it.  Used by "Claim by TX Hash".
+  Future<BridgeRecord?> importByLockTxHash(String lockTxHash) async {
+    final entry = await _relayer.findRecoveryByTxHash(lockTxHash);
+    if (entry == null) return null;
+
+    final ethAddr = entry['eth_address']?.toString() ?? '';
+    final epochStr = entry['epoch']?.toString();
+    final epoch = epochStr != null ? int.tryParse(epochStr) : null;
+    final srcNonce = entry['src_nonce'] is num
+        ? (entry['src_nonce'] as num).toInt()
+        : int.tryParse(entry['src_nonce']?.toString() ?? '');
+    final amountRaw =
+        BigInt.tryParse(entry['amount_raw']?.toString() ?? '');
+
+    if (epoch == null || srcNonce == null || amountRaw == null) return null;
+
+    // Reuse an existing record if one already matches.
+    final normHash = lockTxHash.toLowerCase().replaceAll('0x', '');
+    var rec = _history.cast<BridgeRecord?>().firstWhere(
+          (r) =>
+              r != null &&
+              (r.lockTxHash ?? '').toLowerCase().replaceAll('0x', '') ==
+                  normHash,
+          orElse: () => null,
+        );
+
+    if (rec == null) {
+      rec = BridgeRecord(
+        id: 'w_import_${lockTxHash.substring(0, 8)}',
+        direction: BridgeDirection.wrap,
+        amountRaw: amountRaw.toString(),
+        ethAddress: ethAddr,
+        octraAddress: wallet.currentWallet?.address ?? '',
+        lockTxHash: lockTxHash,
+        epoch: epoch.toString(),
+        srcNonce: srcNonce,
+        status: BridgeStatus.pending,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      );
+      _upsert(rec);
+    } else if (rec.epoch == null || rec.srcNonce == null) {
+      rec = rec.copyWith(epoch: epoch.toString(), srcNonce: srcNonce);
+      _upsert(rec);
+    }
+
+    await _checkClaimable(rec, epoch, amountRaw, srcNonce);
+    return _history.firstWhere((r) => r.id == rec!.id);
+  }
+
+  /// Builds verifyAndMint calldata and simulates it; advances [rec] to
+  /// [BridgeStatus.claimable] or [BridgeStatus.completed] as appropriate.
+  Future<void> _checkClaimable(
+    BridgeRecord rec,
+    int epoch,
+    BigInt amountRaw,
+    int srcNonce,
+  ) async {
+    final calldata = EthAbi.verifyAndMint(
+      epochId: epoch,
+      amountRaw: amountRaw,
+      srcNonce: srcNonce,
+      ethRecipient: rec.ethAddress,
+    );
+    try {
+      await _eth.call(EthConstants.ethereumBridge, calldata);
+      // Simulation succeeded → claimable.
+      _upsert(rec.copyWith(status: BridgeStatus.claimable));
+    } catch (e) {
+      if (e.toString().contains('already_claimed')) {
+        _upsert(rec.copyWith(status: BridgeStatus.completed));
+      }
+      // Otherwise header not yet live on Ethereum — stay pending.
     }
   }
 
@@ -232,18 +307,43 @@ class BridgeService extends ChangeNotifier {
     return updated;
   }
 
-  /// Step 3: claim wOCT on Ethereum (derived-account signing). The relayer's
-  /// opaque calldata is fetched fresh and submitted to the bridge.
+  /// Step 3: claim wOCT on Ethereum. Calldata is built client-side from the
+  /// stored epoch, srcNonce, and amountRaw — same mechanism as bridge.0xio.xyz.
   Future<BridgeRecord> claim(
     BridgeRecord rec,
     EthTxSender sender, {
     GasSpeed gasSpeed = GasSpeed.standard,
   }) async {
-    final epoch = rec.epoch;
-    if (epoch == null) throw StateError('record has no epoch');
-    final calldata =
-        await _relayer.claimCalldataForRecipient(epoch, rec.ethAddress);
-    if (calldata == null) throw StateError('claim calldata unavailable');
+    final epochStr = rec.epoch;
+    if (epochStr == null) throw StateError('record has no epoch');
+    final epoch = int.tryParse(epochStr);
+    if (epoch == null) throw StateError('epoch is not numeric: $epochStr');
+
+    var srcNonce = rec.srcNonce;
+    final amountRaw = BigInt.tryParse(rec.amountRaw) ?? BigInt.zero;
+
+    // If srcNonce is missing (pre-fix records), try to fetch it from the feed.
+    if (srcNonce == null) {
+      final entry = await _relayer.findRecoveryByTxHash(rec.lockTxHash ?? '');
+      if (entry == null) {
+        throw StateError(
+            'srcNonce not stored and tx not found in recovery feed — '
+            'open the bridge screen to refresh.');
+      }
+      srcNonce = entry['src_nonce'] is num
+          ? (entry['src_nonce'] as num).toInt()
+          : int.tryParse(entry['src_nonce']?.toString() ?? '');
+      if (srcNonce == null) throw StateError('srcNonce could not be resolved');
+      rec = rec.copyWith(srcNonce: srcNonce);
+      _upsert(rec);
+    }
+
+    final calldata = EthAbi.verifyAndMint(
+      epochId: epoch,
+      amountRaw: amountRaw,
+      srcNonce: srcNonce,
+      ethRecipient: rec.ethAddress,
+    );
 
     _upsert(rec.copyWith(status: BridgeStatus.submitting));
     final hash = await sender.sendCall(

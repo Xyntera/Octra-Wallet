@@ -62,7 +62,9 @@ class WcService {
       _session = session;
       final a = address;
       if (a != null) onConnected(a);
-    }).catchError((Object e) => onError?.call(e));
+    }).catchError((Object e) {
+      onError?.call(e);
+    });
     return resp.uri?.toString() ?? '';
   }
 

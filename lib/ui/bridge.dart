@@ -29,6 +29,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
   late final BridgeService _service;
   final _amountCtrl = TextEditingController();
   final _recipientCtrl = TextEditingController();
+  final _txHashCtrl = TextEditingController();
 
   BridgeDirection _direction = BridgeDirection.wrap;
   final EthWalletStore _store = EthWalletStore();
@@ -182,6 +183,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
     _store.removeListener(_onAccountChanged);
     _amountCtrl.dispose();
     _recipientCtrl.dispose();
+    _txHashCtrl.dispose();
     _service.dispose();
     super.dispose();
   }
@@ -412,6 +414,52 @@ class _BridgeScreenState extends State<BridgeScreen> {
     }
   }
 
+  // ---- claim by lock tx hash ------------------------------------------------
+
+  Future<void> _showClaimByTxSheet() async {
+    _txHashCtrl.clear();
+    await showCupertinoModalPopup<void>(
+      context: context,
+      builder: (ctx) => _ClaimByTxSheet(
+        ctrl: _txHashCtrl,
+        onLookup: (hash) async {
+          Navigator.of(ctx).pop();
+          await _lookupAndClaim(hash);
+        },
+      ),
+    );
+  }
+
+  Future<void> _lookupAndClaim(String lockTxHash) async {
+    if (lockTxHash.trim().isEmpty) return;
+    setState(() {
+      _working = true;
+      _status = 'Looking up tx in recovery feed…';
+    });
+    try {
+      final rec = await _service.importByLockTxHash(lockTxHash.trim());
+      if (rec == null) {
+        setState(() => _status =
+            'Tx not found in the recovery feed. '
+            'The lock may still be processing — try again after ~30–40 min.');
+        return;
+      }
+      if (rec.status == BridgeStatus.claimable) {
+        setState(() => _status = 'Wrap found and ready to claim — see history.');
+      } else if (rec.status == BridgeStatus.completed) {
+        setState(() => _status = 'This wrap has already been claimed.');
+      } else {
+        setState(() => _status =
+            'Wrap found but the Ethereum header is not yet live. '
+            'Come back after the epoch finalizes (~30–40 min).');
+      }
+    } catch (e) {
+      setState(() => _status = _clean(e));
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
   // ---- helpers --------------------------------------------------------------
 
   static String _microInt(int micro) =>
@@ -587,8 +635,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
       animation: _service,
       builder: (_, __) {
         if (_service.history.isEmpty) {
-          return const Text('No bridge activity yet.',
-              style: TextStyle(color: Color(0xFF636366), fontSize: 13));
+          return _emptyHistory();
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -613,9 +660,43 @@ class _BridgeScreenState extends State<BridgeScreen> {
             ),
             const SizedBox(height: 8),
             ..._service.history.map(_historyTile),
+            const SizedBox(height: 12),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              minSize: 0,
+              onPressed: _working ? null : _showClaimByTxSheet,
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(CupertinoIcons.search, size: 14,
+                      color: Color(0xFF636366)),
+                  SizedBox(width: 6),
+                  Text('Recover by lock TX hash',
+                      style: TextStyle(
+                          color: Color(0xFF636366), fontSize: 12)),
+                ],
+              ),
+            ),
           ],
         );
       },
+    );
+  }
+
+  Widget _emptyHistory() {
+    return Column(
+      children: [
+        const Text('No bridge activity yet.',
+            style: TextStyle(color: Color(0xFF636366), fontSize: 13)),
+        const SizedBox(height: 8),
+        CupertinoButton(
+          padding: EdgeInsets.zero,
+          minSize: 0,
+          onPressed: _working ? null : _showClaimByTxSheet,
+          child: const Text('Have a lock TX? Recover it here.',
+              style: TextStyle(color: Color(0xFF0A84FF), fontSize: 13)),
+        ),
+      ],
     );
   }
 
@@ -840,6 +921,79 @@ class _GasSpeedSheetState extends State<_GasSpeedSheet> {
                   ? const Color(0xFF0A84FF)
                   : const Color(0xFF636366),
               size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Claim-by-lock-TX-hash sheet
+// ---------------------------------------------------------------------------
+
+class _ClaimByTxSheet extends StatelessWidget {
+  final TextEditingController ctrl;
+  final void Function(String) onLookup;
+
+  const _ClaimByTxSheet({required this.ctrl, required this.onLookup});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C1E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: const Color(0xFF48484A),
+                      borderRadius: BorderRadius.circular(2))),
+            ),
+            const SizedBox(height: 16),
+            const Text('Recover by Lock TX Hash',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            const Text(
+                'Enter the Octra transaction hash from your wrap (lock). '
+                'The app will search the bridge relay and surface the Claim button.',
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 12.5, height: 1.4)),
+            const SizedBox(height: 16),
+            CupertinoTextField(
+              controller: ctrl,
+              placeholder: 'Lock TX hash (64 hex chars or 0x…)',
+              placeholderStyle: const TextStyle(color: Color(0xFF636366)),
+              padding: const EdgeInsets.all(14),
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 12, fontFamily: 'monospace'),
+              autocorrect: false,
+              enableSuggestions: false,
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: CupertinoButton.filled(
+                onPressed: () => onLookup(ctrl.text.trim()),
+                child: const Text('Look up'),
+              ),
+            ),
+            CupertinoButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
             ),
           ],
         ),

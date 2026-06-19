@@ -74,13 +74,37 @@ class EthRpc {
     return _hexToBig(r as String);
   }
 
-  /// Simulates a call (e.g. to check claim eligibility before sending). Returns
-  /// the raw result hex; throws (with the revert reason) if the call reverts.
+  /// Simulates a call. Returns the raw result hex; throws on revert.
+  /// If the revert data contains a known "already claimed" marker, the
+  /// thrown [StateError] message starts with "already_claimed".
   Future<String> call(String to, String data, {String? from}) async {
     final tx = <String, dynamic>{'to': to, 'data': data};
     if (from != null) tx['from'] = from;
-    final r = await _rpc('eth_call', [tx, 'latest']);
-    return r as String;
+    try {
+      final r = await _rpc('eth_call', [tx, 'latest']);
+      return r as String;
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('already') ||
+          msg.contains('replay') ||
+          msg.contains('0xb5a78004')) {
+        throw StateError('already_claimed');
+      }
+      rethrow;
+    }
+  }
+
+  /// Latest epoch verified on Ethereum by the OctraLightClient.
+  /// Returns 0 if the call fails.
+  Future<int> latestEpochOnEthereum() async {
+    try {
+      final r = await call(
+          EthConstants.octraLightClient, EthConstants.latestEpochSelector);
+      if (r == '0x' || r.isEmpty) return 0;
+      return _hexToBig(r).toInt();
+    } catch (_) {
+      return 0;
+    }
   }
 
   /// Returns the receipt map, or null if the tx is not yet mined. Success is

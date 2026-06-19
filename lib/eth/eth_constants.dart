@@ -41,14 +41,44 @@ class EthConstants {
   static const String relayerUrl =
       'https://relayer-002838819188.octra.network';
 
-  /// Recovery feed (keyed by lowercased ETH address) for recovering locks.
+  /// Recovery feed proxy used by the official bridge UI (bridge.0xio.xyz).
+  /// Keyed as `{ by_recipient: { "0xlower...": [{epoch, leaf_index, amount_raw,
+  /// src_nonce, message_id, tx_hash, found_at}] } }`.
   static const String recoveryUrl =
-      'https://relayer-002838819188.octra.network/recovery.json';
+      'https://rpc-proxy.0xio.xyz/bridge/recovery.json';
 
   /// Ethereum gas limits used by the reference for each bridge action.
   static const int claimGasLimit = 0x60000; // 393216
   static const int approveGasLimit = 0x30000; // 196608
   static const int burnGasLimit = 0x40000; // 262144
+
+  // ---- verifyAndMint (claim) message constants ----------------------------
+  // Extracted from bridge.0xio.xyz source (static constants in the bundle).
+  // These are hard-coded protocol values that identify the Octra<>Ethereum
+  // bridge message format; they must match what the EthereumBridge contract
+  // verifies on-chain.
+
+  /// 4-byte selector for `verifyAndMint(uint64,(…),bytes32[],uint32)`.
+  /// keccak256("verifyAndMint(uint64,(uint8,uint8,uint64,uint64,bytes32,bytes32,bytes32,address,uint128,uint64),bytes32[],uint32)")[:4]
+  static const String verifyAndMintSelector = '5d5158ed';
+
+  /// 4-byte selector for `latestEpoch()` on the OctraLightClient.
+  static const String latestEpochSelector = '0x9cb118bf';
+
+  static const int msgVersion = 1;
+  static const int msgDirection = 0; // Octra → Ethereum
+  static const int msgSrcChainId = 7777;
+  static const int msgDstChainId = 1; // Ethereum mainnet
+
+  static const String msgSrcBridgeId =
+      '381ab73c25fb8d4ec4c03e15dd630fab75b410afd90a9276ab81df81c38d2a8b';
+  static const String msgDstBridgeId =
+      'ab33480ea300316d03f76278f05f08f011d41d60f5d49c6ff6d8489fbd60c794';
+
+  /// wOCT token identifier used inside bridge messages (distinct from the
+  /// wOCT ERC-20 address).
+  static const String msgTokenId =
+      '412ec1126381d672a9f42b8612e4bc9ee64f5b6467b991e61110203549cdd6de';
 
   /// BIP44 derivation path for the in-app Ethereum account (account 0).
   static const String ethDerivationPath = "m/44'/60'/0'/0/0";

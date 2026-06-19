@@ -36,6 +36,7 @@ class BridgeRecord {
   // Wrap (OCT -> wOCT)
   final String? lockTxHash;
   final String? epoch;
+  final int? srcNonce; // Octra tx nonce — needed to build verifyAndMint calldata
   final String? claimTxHash;
 
   // Unwrap (wOCT -> OCT)
@@ -54,6 +55,7 @@ class BridgeRecord {
     required this.octraAddress,
     this.lockTxHash,
     this.epoch,
+    this.srcNonce,
     this.claimTxHash,
     this.approveTxHash,
     this.burnTxHash,
@@ -65,6 +67,7 @@ class BridgeRecord {
   BridgeRecord copyWith({
     String? lockTxHash,
     String? epoch,
+    int? srcNonce,
     String? claimTxHash,
     String? approveTxHash,
     String? burnTxHash,
@@ -79,6 +82,7 @@ class BridgeRecord {
       octraAddress: octraAddress,
       lockTxHash: lockTxHash ?? this.lockTxHash,
       epoch: epoch ?? this.epoch,
+      srcNonce: srcNonce ?? this.srcNonce,
       claimTxHash: claimTxHash ?? this.claimTxHash,
       approveTxHash: approveTxHash ?? this.approveTxHash,
       burnTxHash: burnTxHash ?? this.burnTxHash,
@@ -96,6 +100,7 @@ class BridgeRecord {
         'octraAddress': octraAddress,
         'lockTxHash': lockTxHash,
         'epoch': epoch,
+        'srcNonce': srcNonce,
         'claimTxHash': claimTxHash,
         'approveTxHash': approveTxHash,
         'burnTxHash': burnTxHash,
@@ -115,6 +120,9 @@ class BridgeRecord {
         octraAddress: j['octraAddress']?.toString() ?? '',
         lockTxHash: j['lockTxHash']?.toString(),
         epoch: j['epoch']?.toString(),
+        srcNonce: j['srcNonce'] != null
+            ? int.tryParse(j['srcNonce'].toString())
+            : null,
         claimTxHash: j['claimTxHash']?.toString(),
         approveTxHash: j['approveTxHash']?.toString(),
         burnTxHash: j['burnTxHash']?.toString(),
@@ -123,7 +131,6 @@ class BridgeRecord {
           orElse: () => BridgeStatus.pending,
         ),
         error: j['error']?.toString(),
-        createdAt:
-            int.tryParse(j['createdAt']?.toString() ?? '') ?? 0,
+        createdAt: int.tryParse(j['createdAt']?.toString() ?? '') ?? 0,
       );
 }

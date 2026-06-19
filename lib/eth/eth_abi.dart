@@ -1,3 +1,5 @@
+import 'eth_constants.dart';
+
 /// Hand-rolled ABI calldata encoders for the OCT <-> wOCT bridge.
 ///
 /// These match the official webcli bridge reference (static/bridge.js)
@@ -44,6 +46,42 @@ class EthAbi {
   /// amount (not max-uint), matching the reference.
   static String approve(String spender, BigInt amount) =>
       '$approveSelector${_addressWord(spender)}${_uintWord(amount)}';
+
+  /// EthereumBridge `verifyAndMint(epochId, m, siblings, leafIndex)` calldata.
+  ///
+  /// Builds the claim calldata client-side, matching the mechanism used by
+  /// bridge.0xio.xyz. The bridge message is encoded with empty Merkle proof
+  /// (siblings = [], leafIndex = 0), which is valid when there is a single
+  /// message per epoch (the typical bridge flow).
+  ///
+  /// ABI layout (all static except siblings[]):
+  ///   [sel 4B] [epochId 32] [10-field tuple 320] [siblings_offset 32]
+  ///   [leafIndex 32] [siblings_length 32]
+  ///   Total: 452 bytes
+  static String verifyAndMint({
+    required int epochId,
+    required BigInt amountRaw,
+    required int srcNonce,
+    required String ethRecipient,
+  }) {
+    // Head: 1 (epochId) + 10 (tuple) + 1 (offset) + 1 (leafIndex) = 13 words = 416 bytes
+    const int siblingsOffset = 13 * 32; // = 416 = 0x1a0
+    return '0x${EthConstants.verifyAndMintSelector}'
+        '${_uintWord(BigInt.from(epochId))}'
+        '${_uintWord(BigInt.from(EthConstants.msgVersion))}'
+        '${_uintWord(BigInt.from(EthConstants.msgDirection))}'
+        '${_uintWord(BigInt.from(EthConstants.msgSrcChainId))}'
+        '${_uintWord(BigInt.from(EthConstants.msgDstChainId))}'
+        '${EthConstants.msgSrcBridgeId}'
+        '${EthConstants.msgDstBridgeId}'
+        '${EthConstants.msgTokenId}'
+        '${_addressWord(ethRecipient)}'
+        '${_uintWord(amountRaw)}'
+        '${_uintWord(BigInt.from(srcNonce))}'
+        '${_uintWord(BigInt.from(siblingsOffset))}'
+        '${_uintWord(BigInt.zero)}' // leafIndex uint32
+        '${_uintWord(BigInt.zero)}'; // siblings.length = 0
+  }
 
   /// EthereumBridge `burn(octraAddress, amount)` calldata.
   ///

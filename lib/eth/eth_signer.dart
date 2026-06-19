@@ -21,15 +21,22 @@ class EthSigner {
           httpClient ?? http.Client(),
         );
 
-  Future<(EtherAmount, EtherAmount)> _fees() async {
+  Future<(EtherAmount, EtherAmount)> _feesFor(GasSpeed speed) async {
     final gasPrice = await _client.getGasPrice();
-    final twice = gasPrice.getInWei * BigInt.two;
+    final base = gasPrice.getInWei;
     final tenGwei = BigInt.from(10000000000);
-    final maxFee = twice > tenGwei ? twice : tenGwei;
-    return (
-      EtherAmount.inWei(maxFee),
-      EtherAmount.inWei(BigInt.from(2000000000)), // 2 gwei priority
-    );
+    final scaled =
+        (base * BigInt.from(speed.multiplierX10)) ~/ BigInt.from(10);
+    final maxFeeWei = scaled > tenGwei ? scaled : tenGwei;
+    final priorityWei =
+        BigInt.from(speed.priorityGwei) * BigInt.from(1000000000);
+    return (EtherAmount.inWei(maxFeeWei), EtherAmount.inWei(priorityWei));
+  }
+
+  /// Estimated max fee in wei for [gasLimit] at [speed].
+  Future<BigInt> estimateFeeWei(int gasLimit, GasSpeed speed) async {
+    final (maxFee, _) = await _feesFor(speed);
+    return maxFee.getInWei * BigInt.from(gasLimit);
   }
 
   /// Signs and submits a contract call (`to`/`dataHex`) from a derived account.
@@ -39,12 +46,13 @@ class EthSigner {
     required String to,
     required String dataHex,
     required int gasLimit,
+    GasSpeed speed = GasSpeed.standard,
   }) async {
     final creds = account.credentials;
     if (creds == null) {
       throw StateError('account mode ${account.mode} cannot sign in-app');
     }
-    final (maxFee, maxPriority) = await _fees();
+    final (maxFee, maxPriority) = await _feesFor(speed);
     final tx = Transaction(
       to: EthereumAddress.fromHex(to),
       value: EtherAmount.zero(),

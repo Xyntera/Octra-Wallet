@@ -65,3 +65,41 @@ class EthConstants {
   /// the token's on-chain `decimals()` at runtime before converting amounts.
   static const int wOctDecimals = 6;
 }
+
+/// Ethereum transaction speed tier controlling EIP-1559 fee multipliers.
+enum GasSpeed {
+  slow,
+  standard,
+  fast,
+  rapid;
+
+  String get label => switch (this) {
+        slow => 'Slow',
+        standard => 'Standard',
+        fast => 'Fast',
+        rapid => 'Rapid',
+      };
+
+  String get timing => switch (this) {
+        slow => '~2–10 min',
+        standard => '~30–60 sec',
+        fast => '~15–30 sec',
+        rapid => 'Next block',
+      };
+
+  /// Multiplier applied to current gas price (×10 to avoid floats).
+  int get multiplierX10 => switch (this) {
+        slow => 9,      // 0.9×
+        standard => 12, // 1.2×
+        fast => 15,     // 1.5×
+        rapid => 20,    // 2.0×
+      };
+
+  /// Priority tip in gwei.
+  int get priorityGwei => switch (this) {
+        slow => 1,
+        standard => 2,
+        fast => 2,
+        rapid => 3,
+      };
+}

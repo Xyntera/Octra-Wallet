@@ -38,8 +38,6 @@ class _BridgeScreenState extends State<BridgeScreen> {
 
   EthAccount? get _ethAccount => _store.account;
 
-  /// Builds a transaction sender for the active account, or null if it cannot
-  /// sign (no account / watch-only address / WalletConnect not yet paired).
   EthTxSender? _senderFor(EthAccount? acc) {
     if (acc == null) return null;
     if (acc.mode == EthAccountMode.walletConnect) {
@@ -62,7 +60,11 @@ class _BridgeScreenState extends State<BridgeScreen> {
     if (!mounted) return;
     _syncRecipientField();
     final addr = _store.account?.address;
-    if (addr != null) _service.refreshBalances(addr);
+    if (addr != null) {
+      _service.refreshBalances(addr);
+      // Auto-detect claimable wraps from the relayer recovery feed.
+      unawaited(_service.resumePendingWraps(addr));
+    }
     setState(() {});
   }
 
@@ -186,8 +188,6 @@ class _BridgeScreenState extends State<BridgeScreen> {
 
   int? _microAmount() => _parseMicro(_amountCtrl.text, 6);
 
-  /// Parses a human decimal amount to integer micro-units with no float math
-  /// (avoids `0.1 * 1e6` truncation). Returns null if invalid or > [decimals].
   static int? _parseMicro(String input, int decimals) {
     final s = input.trim();
     if (s.isEmpty || s == '.') return null;
@@ -224,6 +224,54 @@ class _BridgeScreenState extends State<BridgeScreen> {
     );
   }
 
+  // ---- gas tier picker ------------------------------------------------------
+
+  /// Shows a modal bottom sheet for selecting Ethereum gas speed.
+  /// Fetches current gas price to display estimated fees.
+  /// Returns null if the user cancels.
+  Future<GasSpeed?> _pickGasSpeed({required int gasLimit}) async {
+    BigInt? gasPrice;
+    try {
+      gasPrice = await _service.currentGasPrice();
+    } catch (_) {}
+
+    if (!mounted) return null;
+
+    return showCupertinoModalPopup<GasSpeed>(
+      context: context,
+      builder: (ctx) => _GasSpeedSheet(
+        gasLimit: gasLimit,
+        gasPrice: gasPrice,
+      ),
+    );
+  }
+
+  // ---- manual refresh -------------------------------------------------------
+
+  Future<void> _refreshPending() async {
+    final addr = _ethAccount?.address;
+    if (addr == null) {
+      setState(() => _status = 'Set up an Ethereum account first.');
+      return;
+    }
+    setState(() {
+      _working = true;
+      _status = 'Checking relayer for claimable wraps…';
+    });
+    try {
+      await _service.resumePendingWraps(addr);
+      if (mounted) {
+        setState(() => _status = null);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _status = _clean(e));
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  // ---- direction ------------------------------------------------------------
+
   void _onDirectionChanged(BridgeDirection d) {
     setState(() {
       _direction = d;
@@ -233,6 +281,8 @@ class _BridgeScreenState extends State<BridgeScreen> {
           : (_wallet.currentWallet?.address ?? '');
     });
   }
+
+  // ---- submit ---------------------------------------------------------------
 
   Future<void> _submit() async {
     final micro = _microAmount();
@@ -251,7 +301,6 @@ class _BridgeScreenState extends State<BridgeScreen> {
         if (!EthAccount.isValidAddress(recipient)) {
           throw StateError('Enter a valid Ethereum recipient.');
         }
-        // Balance gate (lock amount + Octra fee).
         final lockFee = int.tryParse(EthConstants.lockOu) ?? 1000;
         final availMicro = (_wallet.publicBalance * 1000000).round();
         if (micro + lockFee > availMicro) {
@@ -273,14 +322,15 @@ class _BridgeScreenState extends State<BridgeScreen> {
         final rec =
             await _service.startWrap(ethRecipient: recipient, microOct: micro);
         setState(() => _status =
-            'Locked OCT (${_short(rec.lockTxHash)}). Waiting for the epoch — '
-            'this can take ~30–40 min. Then claim from history.');
+            'Locked OCT (${_short(rec.lockTxHash)}). Waiting for epoch — '
+            '~30–40 min. The Claim button will appear in history automatically.');
         unawaited(_service.prepareClaim(rec).then((r) {
           if (mounted) {
-            setState(() => _status = 'Ready to claim wOCT in history.');
+            setState(() => _status = 'Ready to claim wOCT — see history.');
           }
-        }).catchError((_) {/* stays pending in history */}));
+        }).catchError((_) {/* stays pending; resumePendingWraps will catch it */}));
       } else {
+        // Unwrap: pick gas speed first, then confirm.
         final sender = _senderFor(_ethAccount);
         if (sender == null) {
           throw StateError(
@@ -291,17 +341,22 @@ class _BridgeScreenState extends State<BridgeScreen> {
           if (recipient.length != 47 || !recipient.startsWith('oct')) {
             throw StateError('Enter a valid Octra recipient.');
           }
-          // Balance gate.
           await _service.refreshBalances(sender.address);
           if (BigInt.from(micro) > _service.woctBalanceRaw) {
             throw StateError('Insufficient wOCT balance — have '
                 '${_micro(_service.woctBalanceRaw)}.');
           }
           if (!mounted) return;
+          final speed = await _pickGasSpeed(
+              gasLimit: EthConstants.approveGasLimit + EthConstants.burnGasLimit);
+          if (speed == null) return;
+
+          if (!mounted) return;
           final ok = await _confirm(
               'Confirm unwrap',
               'Burn ${_microInt(micro)} wOCT and release OCT to:\n$recipient\n\n'
-              'Sends two Ethereum transactions (approve + burn) and costs gas.');
+              'Sends two Ethereum transactions (approve + burn). '
+              'Gas: ${speed.label} (${speed.timing}).');
           if (ok != true) return;
 
           setState(() {
@@ -309,7 +364,11 @@ class _BridgeScreenState extends State<BridgeScreen> {
             _status = null;
           });
           await _service.startUnwrap(
-              sender: sender, octraRecipient: recipient, microOct: micro);
+            sender: sender,
+            octraRecipient: recipient,
+            microOct: micro,
+            gasSpeed: speed,
+          );
           setState(() => _status =
               'Burned wOCT. OCT will be released to your Octra address shortly.');
         } finally {
@@ -323,6 +382,8 @@ class _BridgeScreenState extends State<BridgeScreen> {
     }
   }
 
+  // ---- claim ----------------------------------------------------------------
+
   Future<void> _claim(BridgeRecord rec) async {
     final sender = _senderFor(_ethAccount);
     if (sender == null) {
@@ -331,13 +392,18 @@ class _BridgeScreenState extends State<BridgeScreen> {
       return;
     }
     try {
+      final speed =
+          await _pickGasSpeed(gasLimit: EthConstants.claimGasLimit);
+      if (speed == null) return;
+
       final amount = BigInt.tryParse(rec.amountRaw) ?? BigInt.zero;
       final ok = await _confirm('Claim wOCT',
-          'Submit the Ethereum claim for ${_micro(amount)} wOCT? This costs gas.');
+          'Submit the Ethereum claim for ${_micro(amount)} wOCT.\n'
+          'Gas: ${speed.label} (${speed.timing}).');
       if (ok != true) return;
       setState(() => _working = true);
-      await _service.claim(rec, sender);
-      setState(() => _status = 'Claimed wOCT.');
+      await _service.claim(rec, sender, gasSpeed: speed);
+      setState(() => _status = 'Claimed wOCT!');
     } catch (e) {
       setState(() => _status = _clean(e));
     } finally {
@@ -346,8 +412,12 @@ class _BridgeScreenState extends State<BridgeScreen> {
     }
   }
 
+  // ---- helpers --------------------------------------------------------------
+
   static String _microInt(int micro) =>
       (micro / 1000000.0).toStringAsFixed(6);
+
+  // ---- build ----------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -523,11 +593,24 @@ class _BridgeScreenState extends State<BridgeScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('History',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600)),
+            Row(
+              children: [
+                const Text('History',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600)),
+                const Spacer(),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  minSize: 0,
+                  onPressed: _working ? null : _refreshPending,
+                  child: const Text('Refresh',
+                      style:
+                          TextStyle(color: Color(0xFF0A84FF), fontSize: 13)),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
             ..._service.history.map(_historyTile),
           ],
@@ -541,53 +624,226 @@ class _BridgeScreenState extends State<BridgeScreen> {
     final canClaim = isWrap &&
         r.status == BridgeStatus.claimable &&
         (_ethAccount?.canSign ?? false);
+
+    final statusColor = switch (r.status) {
+      BridgeStatus.completed => const Color(0xFF30D158),
+      BridgeStatus.failed => const Color(0xFFFF453A),
+      BridgeStatus.claimable => const Color(0xFFFF9F0A),
+      BridgeStatus.submitting => const Color(0xFF0A84FF),
+      BridgeStatus.pending => const Color(0xFF8E8E93),
+    };
+
+    final statusLabel = switch (r.status) {
+      BridgeStatus.claimable => 'Ready to claim',
+      BridgeStatus.pending =>
+        r.epoch != null ? 'Pending · epoch ${r.epoch}' : 'Pending',
+      BridgeStatus.submitting => 'Submitting…',
+      BridgeStatus.completed => 'Completed',
+      BridgeStatus.failed =>
+        'Failed${r.error != null ? ': ${r.error}' : ''}',
+    };
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: const Color(0xFF1C1C1E),
         borderRadius: BorderRadius.circular(10),
+        border: r.status == BridgeStatus.claimable
+            ? Border.all(
+                color: const Color(0xFFFF9F0A).withValues(alpha: 0.5))
+            : null,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                    '${isWrap ? 'Wrap' : 'Unwrap'}  ${_micro(BigInt.tryParse(r.amountRaw) ?? BigInt.zero)}',
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                    '${isWrap ? 'Wrap' : 'Unwrap'}  '
+                    '${_micro(BigInt.tryParse(r.amountRaw) ?? BigInt.zero)}',
                     style: const TextStyle(
                         color: Colors.white, fontWeight: FontWeight.w500)),
-                const SizedBox(height: 2),
-                Text(r.status.name,
-                    style: const TextStyle(
-                        color: Color(0xFF8E8E93), fontSize: 12)),
-              ],
-            ),
+              ),
+              if (canClaim)
+                CupertinoButton(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  color: const Color(0xFF0A84FF),
+                  borderRadius: BorderRadius.circular(8),
+                  minSize: 0,
+                  onPressed: _working ? null : () => _claim(r),
+                  child:
+                      const Text('Claim', style: TextStyle(fontSize: 13)),
+                ),
+            ],
           ),
-          if (canClaim)
-            CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              color: const Color(0xFF0A84FF),
-              borderRadius: BorderRadius.circular(8),
-              onPressed: _working ? null : () => _claim(r),
-              child: const Text('Claim', style: TextStyle(fontSize: 13)),
-            ),
+          const SizedBox(height: 4),
+          Text(statusLabel,
+              style: TextStyle(color: statusColor, fontSize: 12)),
+          if (r.lockTxHash != null) ...[
+            const SizedBox(height: 2),
+            Text('Lock: ${_short(r.lockTxHash)}',
+                style: const TextStyle(
+                    color: Color(0xFF636366), fontSize: 11)),
+          ],
+          if (r.claimTxHash != null) ...[
+            const SizedBox(height: 2),
+            Text('Claim tx: ${_short(r.claimTxHash)}',
+                style: const TextStyle(
+                    color: Color(0xFF636366), fontSize: 11)),
+          ],
         ],
       ),
     );
   }
 
-  static String _short(String? s) =>
-      (s == null || s.length < 12) ? (s ?? '') : '${s.substring(0, 6)}…${s.substring(s.length - 4)}';
+  static String _short(String? s) => (s == null || s.length < 12)
+      ? (s ?? '')
+      : '${s.substring(0, 6)}…${s.substring(s.length - 4)}';
 
   static String _micro(BigInt raw) =>
       (raw.toDouble() / 1000000.0).toStringAsFixed(6);
 
-  static String _wei(BigInt wei) => (wei.toDouble() / 1e18).toStringAsFixed(5);
+  static String _wei(BigInt wei) =>
+      (wei.toDouble() / 1e18).toStringAsFixed(5);
 
   static String _clean(Object e) => e
       .toString()
       .replaceFirst('StateError: ', '')
       .replaceFirst('Exception: ', '');
+}
+
+// ---------------------------------------------------------------------------
+// Gas speed picker sheet (stateful for selection highlighting)
+// ---------------------------------------------------------------------------
+
+class _GasSpeedSheet extends StatefulWidget {
+  final int gasLimit;
+  final BigInt? gasPrice;
+
+  const _GasSpeedSheet({required this.gasLimit, this.gasPrice});
+
+  @override
+  State<_GasSpeedSheet> createState() => _GasSpeedSheetState();
+}
+
+class _GasSpeedSheetState extends State<_GasSpeedSheet> {
+  GasSpeed _selected = GasSpeed.standard;
+
+  String _feeLabel(GasSpeed speed) {
+    final gp = widget.gasPrice;
+    if (gp == null) return '';
+    final scaled =
+        (gp.toDouble() * speed.multiplierX10 / 10) * widget.gasLimit;
+    final eth = scaled / 1e18;
+    return '~${eth.toStringAsFixed(5)} ETH';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C1E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: const Color(0xFF48484A),
+                    borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 16),
+            const Text('Gas Speed',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text(
+                'Higher speed = higher fee = faster Ethereum confirmation.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 12)),
+            const SizedBox(height: 16),
+            for (final speed in GasSpeed.values) _tile(speed),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: CupertinoButton.filled(
+                onPressed: () => Navigator.of(context).pop(_selected),
+                child: const Text('Continue'),
+              ),
+            ),
+            CupertinoButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tile(GasSpeed speed) {
+    final isSelected = speed == _selected;
+    final fee = _feeLabel(speed);
+    return GestureDetector(
+      onTap: () => setState(() => _selected = speed),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF0A84FF).withValues(alpha: 0.15)
+              : const Color(0xFF2C2C2E),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: isSelected
+                  ? const Color(0xFF0A84FF)
+                  : Colors.transparent),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(speed.label,
+                      style: TextStyle(
+                          color: isSelected
+                              ? const Color(0xFF0A84FF)
+                              : Colors.white,
+                          fontWeight: FontWeight.w600)),
+                  Text(speed.timing,
+                      style: const TextStyle(
+                          color: Color(0xFF8E8E93), fontSize: 12)),
+                ],
+              ),
+            ),
+            if (fee.isNotEmpty)
+              Text(fee,
+                  style: const TextStyle(
+                      color: Color(0xFF8E8E93), fontSize: 12)),
+            const SizedBox(width: 10),
+            Icon(
+              isSelected
+                  ? CupertinoIcons.checkmark_circle_fill
+                  : CupertinoIcons.circle,
+              color: isSelected
+                  ? const Color(0xFF0A84FF)
+                  : const Color(0xFF636366),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

@@ -1,4 +1,5 @@
 import 'eth_account.dart';
+import 'eth_constants.dart';
 import 'eth_rpc.dart';
 import 'eth_signer.dart';
 import 'eth_walletconnect.dart';
@@ -13,6 +14,7 @@ abstract class EthTxSender {
     required String to,
     required String dataHex,
     required int gasLimit,
+    GasSpeed speed = GasSpeed.standard,
   });
 
   Future<bool?> waitForSuccess(String txHash);
@@ -31,14 +33,28 @@ class LocalEthSender implements EthTxSender {
   @override
   String get address => account.address;
 
+  /// Estimated fee in wei for all gas speed tiers at [gasLimit].
+  Future<Map<GasSpeed, BigInt>> feeEstimates(int gasLimit) async {
+    final result = <GasSpeed, BigInt>{};
+    for (final speed in GasSpeed.values) {
+      result[speed] = await _signer.estimateFeeWei(gasLimit, speed);
+    }
+    return result;
+  }
+
   @override
   Future<String> sendCall({
     required String to,
     required String dataHex,
     required int gasLimit,
+    GasSpeed speed = GasSpeed.standard,
   }) =>
       _signer.sendCall(
-          account: account, to: to, dataHex: dataHex, gasLimit: gasLimit);
+          account: account,
+          to: to,
+          dataHex: dataHex,
+          gasLimit: gasLimit,
+          speed: speed);
 
   @override
   Future<bool?> waitForSuccess(String txHash) =>
@@ -64,6 +80,7 @@ class WalletConnectSender implements EthTxSender {
     required String to,
     required String dataHex,
     required int gasLimit,
+    GasSpeed speed = GasSpeed.standard, // ignored; external wallet sets fees
   }) {
     final tx = <String, dynamic>{
       'from': wc.address,

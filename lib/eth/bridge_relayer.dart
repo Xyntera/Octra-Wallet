@@ -84,5 +84,28 @@ class BridgeRelayer {
     return null;
   }
 
+  /// Recovery feed keyed by lowercased ETH address. Returns lock entries for
+  /// [ethAddress] (each has `tx_hash`, `epoch`, `amount_raw`, `found_at`).
+  /// Returns an empty list on network or parse error.
+  Future<List<Map<String, dynamic>>> fetchRecovery(String ethAddress) async {
+    try {
+      final res = await _client.get(
+        Uri.parse(EthConstants.recoveryUrl),
+        headers: const {'accept': 'application/json'},
+      );
+      if (res.statusCode != 200) return const [];
+      final data = jsonDecode(res.body);
+      if (data is! Map) return const [];
+      final entries = data[ethAddress.toLowerCase()];
+      if (entries is! List) return const [];
+      return entries
+          .whereType<Map>()
+          .map((m) => m.cast<String, dynamic>())
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   void dispose() => _client.close();
 }

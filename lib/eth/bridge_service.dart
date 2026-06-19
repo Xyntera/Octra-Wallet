@@ -28,6 +28,7 @@ class BridgeService extends ChangeNotifier {
 
   final List<BridgeRecord> _history = [];
   List<BridgeRecord> get history => List.unmodifiable(_history);
+  bool _disposed = false;
 
   BigInt ethBalanceWei = BigInt.zero;
   BigInt woctBalanceRaw = BigInt.zero;
@@ -78,18 +79,79 @@ class BridgeService extends ChangeNotifier {
       _history.insert(0, r);
     }
     _persist();
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
-  // ---- balances ------------------------------------------------------------
+  // ---- balances + gas price ------------------------------------------------
 
   Future<void> refreshBalances(String ethAddress) async {
     if (!EthAccount.isValidAddress(ethAddress)) return;
     try {
       ethBalanceWei = await _eth.ethBalanceWei(ethAddress);
       woctBalanceRaw = await _eth.woctBalance(ethAddress);
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     } catch (_) {/* surfaced by callers */}
+  }
+
+  /// Current Ethereum gas price in wei (for fee estimation in the UI).
+  Future<BigInt> currentGasPrice() => _eth.gasPrice();
+
+  /// Checks the relayer recovery feed for [ethAddress] and advances any pending
+  /// wrap records to [BridgeStatus.claimable] if the epoch header is live on
+  /// Ethereum. Call this when the bridge screen opens or on manual refresh.
+  Future<void> resumePendingWraps(String ethAddress) async {
+    final pending = _history
+        .where((r) =>
+            r.direction == BridgeDirection.wrap &&
+            r.status == BridgeStatus.pending &&
+            r.lockTxHash != null)
+        .toList();
+    if (pending.isEmpty) return;
+
+    List<Map<String, dynamic>> recovery = const [];
+    try {
+      recovery = await _relayer.fetchRecovery(ethAddress);
+    } catch (_) {}
+
+    for (var rec in pending) {
+      String? epoch = rec.epoch;
+
+      // Try to find the epoch via recovery.json if not already known.
+      if (epoch == null) {
+        for (final entry in recovery) {
+          final th = entry['tx_hash']?.toString() ?? '';
+          final lh = rec.lockTxHash ?? '';
+          if (th == lh ||
+              '0x$th' == lh ||
+              th == lh.replaceAll('0x', '').replaceAll('0X', '')) {
+            epoch = entry['epoch']?.toString();
+            if (epoch != null) {
+              rec = rec.copyWith(epoch: epoch);
+              _upsert(rec);
+            }
+            break;
+          }
+        }
+      }
+
+      if (epoch == null) continue;
+
+      // Fetch claim calldata; if available verify it doesn't revert on-chain.
+      try {
+        final calldata =
+            await _relayer.claimCalldataForRecipient(epoch, rec.ethAddress);
+        if (calldata != null) {
+          try {
+            await _eth.call(EthConstants.ethereumBridge, calldata);
+            _upsert(rec.copyWith(status: BridgeStatus.claimable));
+          } catch (_) {
+            // Header not yet finalized on Ethereum — leave as pending.
+          }
+        }
+      } catch (_) {
+        // Relayer not ready — leave as pending.
+      }
+    }
   }
 
   // ---- WRAP (OCT -> wOCT) --------------------------------------------------
@@ -172,7 +234,11 @@ class BridgeService extends ChangeNotifier {
 
   /// Step 3: claim wOCT on Ethereum (derived-account signing). The relayer's
   /// opaque calldata is fetched fresh and submitted to the bridge.
-  Future<BridgeRecord> claim(BridgeRecord rec, EthTxSender sender) async {
+  Future<BridgeRecord> claim(
+    BridgeRecord rec,
+    EthTxSender sender, {
+    GasSpeed gasSpeed = GasSpeed.standard,
+  }) async {
     final epoch = rec.epoch;
     if (epoch == null) throw StateError('record has no epoch');
     final calldata =
@@ -184,6 +250,7 @@ class BridgeService extends ChangeNotifier {
       to: EthConstants.ethereumBridge,
       dataHex: calldata,
       gasLimit: EthConstants.claimGasLimit,
+      speed: gasSpeed,
     );
     final ok = await sender.waitForSuccess(hash);
     final updated = rec.copyWith(
@@ -204,6 +271,7 @@ class BridgeService extends ChangeNotifier {
     required EthTxSender sender,
     required String octraRecipient,
     required int microOct,
+    GasSpeed gasSpeed = GasSpeed.standard,
   }) async {
     final recip = octraRecipient.trim();
     if (recip.length != 47 || !recip.startsWith('oct')) {
@@ -227,6 +295,7 @@ class BridgeService extends ChangeNotifier {
       to: EthConstants.wOctToken,
       dataHex: EthAbi.approve(EthConstants.ethereumBridge, amount),
       gasLimit: EthConstants.approveGasLimit,
+      speed: gasSpeed,
     );
     if (await sender.waitForSuccess(approveHash) != true) {
       final failed = rec.copyWith(
@@ -242,6 +311,7 @@ class BridgeService extends ChangeNotifier {
       to: EthConstants.ethereumBridge,
       dataHex: EthAbi.burn(recip, amount),
       gasLimit: EthConstants.burnGasLimit,
+      speed: gasSpeed,
     );
     final burnOk = await sender.waitForSuccess(burnHash);
     final updated = rec.copyWith(
@@ -271,6 +341,7 @@ class BridgeService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _eth.dispose();
     _relayer.dispose();
     super.dispose();

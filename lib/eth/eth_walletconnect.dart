@@ -229,7 +229,14 @@ class WcService extends ChangeNotifier {
     unawaited(Future<void>.delayed(const Duration(milliseconds: 350))
         .then((_) => _openWalletForApproval()));
 
-    final result = await pending;
+    // The request only resolves once the user responds in their wallet. Cap the
+    // wait so a forgotten/abandoned prompt can't freeze the UI forever. The tx
+    // is only broadcast after approval, so timing out before that sends nothing.
+    final result = await pending.timeout(
+      const Duration(minutes: 3),
+      onTimeout: () => throw TimeoutException(
+          'No response from wallet — open your wallet and try again.'),
+    );
     return result.toString();
   }
 

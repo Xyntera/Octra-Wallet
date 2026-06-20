@@ -82,8 +82,12 @@ class WalletConnectSender implements EthTxSender {
     required int gasLimit,
     GasSpeed speed = GasSpeed.standard, // ignored; external wallet sets fees
   }) {
+    final from = wc.address;
+    if (from == null || from.isEmpty) {
+      throw StateError('WalletConnect is not connected');
+    }
     final tx = <String, dynamic>{
-      'from': wc.address,
+      'from': from,
       'to': to,
       'data': dataHex,
       'gas': '0x${gasLimit.toRadixString(16)}',
@@ -95,7 +99,9 @@ class WalletConnectSender implements EthTxSender {
   @override
   Future<bool?> waitForSuccess(
     String txHash, {
-    Duration timeout = const Duration(minutes: 5),
+    // External wallets let the user pick their own (possibly slow) gas, so give
+    // the receipt longer to appear than the in-app signer.
+    Duration timeout = const Duration(minutes: 8),
   }) async {
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {

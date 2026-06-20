@@ -490,6 +490,20 @@ class _BridgeScreenState extends State<BridgeScreen> {
       return 'Already claimed — this wrap was previously redeemed.';
     }
 
+    // Bridge action reverts (keep their context before the generic revert).
+    if (l.contains('claim reverted')) {
+      return 'Claim reverted on Ethereum — it may already be claimed.';
+    }
+    if (l.contains('approval reverted')) {
+      return 'Approval reverted on Ethereum. Try again.';
+    }
+    if (l.contains('burn reverted')) {
+      return 'Burn reverted on Ethereum. Try again.';
+    }
+    if (l.contains('not confirmed in time')) {
+      return 'Not confirmed in time. Tap Refresh, then retry if needed.';
+    }
+
     // Contract reverts
     if (l.contains('execution reverted') || l.contains('revert')) {
       return 'Contract rejected the transaction. Refresh and try again.';
@@ -499,6 +513,11 @@ class _BridgeScreenState extends State<BridgeScreen> {
     if (l.contains('nonce too low') || l.contains('replacement transaction underpriced') ||
         l.contains('already known')) {
       return 'Transaction conflict. Wait a moment and try again.';
+    }
+
+    // Wallet didn't respond to a signing request (WalletConnect timeout).
+    if (l.contains('no response from wallet')) {
+      return 'No response from your wallet. Open it and approve, then retry.';
     }
 
     // Network

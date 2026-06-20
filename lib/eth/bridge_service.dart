@@ -105,6 +105,9 @@ class BridgeService extends ChangeNotifier {
   /// the `verifyAndMint` ABI — this matches the mechanism used by
   /// bridge.0xio.xyz and does not require the relayer's RPC.
   Future<void> resumePendingWraps(String ethAddress) async {
+    // First, reconcile any claim that outran its receipt poll.
+    await _recheckSubmittingClaims();
+
     final pending = _history
         .where((r) =>
             r.direction == BridgeDirection.wrap &&
@@ -353,14 +356,51 @@ class BridgeService extends ChangeNotifier {
       speed: gasSpeed,
     );
     final ok = await sender.waitForSuccess(hash);
-    final updated = rec.copyWith(
-      claimTxHash: hash,
-      status: ok == true ? BridgeStatus.completed : BridgeStatus.failed,
-      error: ok == true ? null : 'claim not confirmed',
-    );
+    // ok == true → mined OK; false → reverted; null → not mined within the
+    // poll window (still likely confirming — keep it submitting so we don't
+    // mislabel a slow-but-valid claim as failed; refresh re-checks the receipt).
+    final BridgeStatus status;
+    final String? err;
+    if (ok == true) {
+      status = BridgeStatus.completed;
+      err = null;
+    } else if (ok == false) {
+      status = BridgeStatus.failed;
+      err = 'claim reverted on Ethereum';
+    } else {
+      status = BridgeStatus.submitting;
+      err = null;
+    }
+    final updated = rec.copyWith(claimTxHash: hash, status: status, error: err);
     _upsert(updated);
     await refreshBalances(rec.ethAddress);
     return updated;
+  }
+
+  /// Re-checks any claim still [BridgeStatus.submitting] with a known claim tx
+  /// hash by reading its Ethereum receipt, advancing it to completed or failed
+  /// once the receipt lands. Called from [resumePendingWraps] so a slow claim
+  /// that outran its receipt poll is reconciled on the next refresh.
+  Future<void> _recheckSubmittingClaims() async {
+    final submitting = _history
+        .where((r) =>
+            r.direction == BridgeDirection.wrap &&
+            r.status == BridgeStatus.submitting &&
+            r.claimTxHash != null)
+        .toList();
+    for (final rec in submitting) {
+      try {
+        final receipt = await _eth.transactionReceipt(rec.claimTxHash!);
+        if (receipt == null) continue; // still pending
+        final st = receipt['status']?.toString();
+        final ok = st == '0x1' || st == '1';
+        _upsert(rec.copyWith(
+          status: ok ? BridgeStatus.completed : BridgeStatus.failed,
+          error: ok ? null : 'claim reverted on Ethereum',
+        ));
+        if (ok) await refreshBalances(rec.ethAddress);
+      } catch (_) {/* leave as submitting; retry next refresh */}
+    }
   }
 
   // ---- UNWRAP (wOCT -> OCT) ------------------------------------------------
@@ -390,23 +430,30 @@ class BridgeService extends ChangeNotifier {
     );
     _upsert(rec);
 
-    // 1. approve
+    // 1. approve — must be confirmed before the burn (the burn spends the
+    // allowance). A null (timeout) result can't be trusted, so we stop and let
+    // the user retry rather than burn against an unconfirmed allowance.
     final approveHash = await sender.sendCall(
       to: EthConstants.wOctToken,
       dataHex: EthAbi.approve(EthConstants.ethereumBridge, amount),
       gasLimit: EthConstants.approveGasLimit,
       speed: gasSpeed,
     );
-    if (await sender.waitForSuccess(approveHash) != true) {
+    final approveOk = await sender.waitForSuccess(approveHash);
+    if (approveOk != true) {
       final failed = rec.copyWith(
           approveTxHash: approveHash,
           status: BridgeStatus.failed,
-          error: 'approve not confirmed');
+          error: approveOk == false
+              ? 'approval reverted on Ethereum'
+              : 'approval not confirmed in time — try again');
       _upsert(failed);
       return failed;
     }
 
-    // 2. burn
+    // 2. burn. ok → OCT releasing (pending); false → reverted (failed);
+    // null → broadcast but not yet mined — treat as pending (the burn is
+    // likely confirming and OCT will release) rather than mislabel as failed.
     final burnHash = await sender.sendCall(
       to: EthConstants.ethereumBridge,
       dataHex: EthAbi.burn(recip, amount),
@@ -417,8 +464,8 @@ class BridgeService extends ChangeNotifier {
     final updated = rec.copyWith(
       approveTxHash: approveHash,
       burnTxHash: burnHash,
-      status: burnOk == true ? BridgeStatus.pending : BridgeStatus.failed,
-      error: burnOk == true ? null : 'burn not confirmed',
+      status: burnOk == false ? BridgeStatus.failed : BridgeStatus.pending,
+      error: burnOk == false ? 'burn reverted on Ethereum' : null,
     );
     _upsert(updated);
     await refreshBalances(sender.address);

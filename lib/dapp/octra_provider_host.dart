@@ -90,6 +90,7 @@ class OctraProviderHost {
     'contract_call',
     'contract_receipt',
     'staging_view',
+    'staging_estimateOu',
   };
 
   void attach(InAppWebViewController controller) {
@@ -131,7 +132,10 @@ class OctraProviderHost {
           : <String, dynamic>{};
       final method = payload['method']?.toString() ?? '';
       final rawParams = payload['params'];
-      final params = rawParams is List ? rawParams : const [];
+      // RFC-O-1 allows params as an array or a bare object; normalise to a list.
+      final params = rawParams is List
+          ? rawParams
+          : (rawParams is Map ? [rawParams] : const []);
       final result = await _route(method, params);
       return {'result': result};
     } on _ProviderError catch (e) {
@@ -312,7 +316,12 @@ class OctraProviderHost {
 
   Future<Map<String, dynamic>> _submitTransaction(List params) async {
     _require(DappPermission.sendTransactions);
-    final signed = _mapParam(params);
+    // RFC-O-1: params = [{ tx: SignedOctraTransaction }]. Accept a bare signed
+    // map too for resilience.
+    final outer = _mapParam(params);
+    final signed = (outer['tx'] is Map)
+        ? (outer['tx'] as Map).cast<String, dynamic>()
+        : outer;
     final ok = await onApprove(DappPrompt(
       kind: DappPromptKind.sendTransaction,
       origin: origin,
@@ -405,7 +414,22 @@ class OctraProviderHost {
 
   Future<Map<String, dynamic>> _claimStealth(List params) async {
     _require(DappPermission.stealthClaim);
-    final claim = _mapParam(params);
+    // RFC-O-1: params = [{ outputId, fee? }]. The wallet needs the full claim
+    // (secret + blinding) which only a scan yields, so resolve it by id.
+    final p = _mapParam(params);
+    final outputId = (p['outputId'] ?? p['id'] ?? p['output_id'])?.toString();
+    if (outputId == null || outputId.isEmpty) {
+      throw _ProviderError(DappErr.unsupported, 'Missing "outputId"');
+    }
+    final claims = await wallet.scanStealthTransfers();
+    final claim = claims.cast<Map<String, dynamic>?>().firstWhere(
+          (c) => c != null && c['id'].toString() == outputId,
+          orElse: () => null,
+        );
+    if (claim == null) {
+      throw _ProviderError(
+          DappErr.unsupported, 'Stealth output not found: $outputId');
+    }
     final ok = await onApprove(DappPrompt(
       kind: DappPromptKind.privacy,
       origin: origin,
@@ -460,10 +484,13 @@ class OctraProviderHost {
     } else if (result is String) {
       hash = result;
     }
+    final accepted = hash != null && hash.isNotEmpty;
     return {
       'hash': hash ?? '',
-      'accepted': hash != null && hash.isNotEmpty,
-      'status': hash != null && hash.isNotEmpty ? 'pending' : 'rejected',
+      'accepted': accepted,
+      'status': accepted ? 'pending' : 'rejected',
+      if (accepted)
+        'explorerUrl': '${wallet.explorerBaseUrlSync}/tx.html?hash=$hash',
     };
   }
 
@@ -503,13 +530,21 @@ class OctraProviderHost {
     return v.toString();
   }
 
-  /// Parses an amount that may arrive as a micro-OCT string/number.
+  /// Parses an amount to micro-OCT. RFC-O-1 passes micro-OCT integer strings
+  /// (e.g. '1000000' = 1 OCT). For resilience we also accept decimal OCT
+  /// (a value containing '.', e.g. '10.5') and convert it — a fractional part
+  /// can only mean OCT, never sub-micro, so this is unambiguous.
   int _microFrom(dynamic v) {
     if (v == null) return 0;
-    if (v is int) return v;
-    if (v is double) return v.toInt();
+    if (v is int) return v; // micro-OCT integer
+    if (v is double) return (v * 1000000).round(); // decimal OCT
     final s = v.toString().trim();
-    return int.tryParse(s) ?? 0;
+    if (s.isEmpty) return 0;
+    if (s.contains('.')) {
+      final d = double.tryParse(s);
+      return d == null ? 0 : (d * 1000000).round();
+    }
+    return int.tryParse(s) ?? 0; // micro-OCT integer string
   }
 
   String _fmtMicro(int micro) => '${(micro / 1000000.0).toStringAsFixed(6)} OCT';

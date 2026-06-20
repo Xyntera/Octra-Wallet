@@ -34,7 +34,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
   final _amountCtrl = TextEditingController();
   final _recipientCtrl = TextEditingController();
   final _txHashCtrl = TextEditingController();
-  final WcService _wc = WcService();
+  WcService get _wc => WcService.instance;
 
   BridgeDirection _direction = BridgeDirection.wrap;
   bool _working = false;
@@ -45,13 +45,21 @@ class _BridgeScreenState extends State<BridgeScreen> {
 
   EthAccount? get _ethAccount => _store.account;
 
-  EthTxSender? _senderFor(EthAccount? acc) {
+  /// Resolves a sender for the active account, restoring the WalletConnect
+  /// session if needed. Returns null when no signing path is available.
+  Future<EthTxSender?> _resolveSender() async {
+    final acc = _ethAccount;
     if (acc == null) return null;
     if (acc.mode == EthAccountMode.walletConnect) {
+      await _wc.ensureReady();
       return _wc.isConnected ? WalletConnectSender(_wc) : null;
     }
     return acc.canSign ? LocalEthSender(acc) : null;
   }
+
+  /// Whether the active account signs via an external WalletConnect wallet.
+  bool get _isWalletConnect =>
+      _ethAccount?.mode == EthAccountMode.walletConnect;
 
   @override
   void initState() {
@@ -60,8 +68,16 @@ class _BridgeScreenState extends State<BridgeScreen> {
     _service = BridgeService(wallet: _wallet);
     _store = context.read<EthWalletStore>();
     _store.addListener(_onAccountChanged);
+    _wc.addListener(_onWcChanged);
     _service.loadHistory();
+    // Restore any live WalletConnect session so signing works immediately.
+    if (_isWalletConnect) unawaited(_wc.ensureReady());
   }
+
+  void _onWcChanged() {
+    if (mounted) setState(() {});
+  }
+
 
   void _onAccountChanged() {
     if (!mounted) return;
@@ -84,6 +100,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
   @override
   void dispose() {
     _store.removeListener(_onAccountChanged);
+    _wc.removeListener(_onWcChanged);
     _amountCtrl.dispose();
     _recipientCtrl.dispose();
     _txHashCtrl.dispose();
@@ -292,9 +309,14 @@ class _BridgeScreenState extends State<BridgeScreen> {
           if (mounted) _setStatus('wOCT ready to claim — see history below.', _StatusType.success);
         }).catchError((_) {}));
       } else {
-        final sender = _senderFor(_ethAccount);
+        final sender = await _resolveSender();
         if (sender == null) {
-          _setStatus('Connect a signing Ethereum wallet to unwrap.', _StatusType.warning);
+          if (_isWalletConnect) {
+            _setStatus('Wallet session expired. Reconnecting…', _StatusType.warning);
+            await _connectWalletConnect();
+          } else {
+            _setStatus('Connect a signing Ethereum wallet to unwrap.', _StatusType.warning);
+          }
           return;
         }
         try {
@@ -311,19 +333,31 @@ class _BridgeScreenState extends State<BridgeScreen> {
             return;
           }
           if (!mounted) return;
-          final speed = await _pickGasSpeed(
-            gasLimit: EthConstants.approveGasLimit + EthConstants.burnGasLimit,
-          );
-          if (speed == null) return;
+          GasSpeed speed = GasSpeed.standard;
+          if (!_isWalletConnect) {
+            final picked = await _pickGasSpeed(
+              gasLimit:
+                  EthConstants.approveGasLimit + EthConstants.burnGasLimit,
+            );
+            if (picked == null) return;
+            speed = picked;
+          }
           if (!mounted) return;
           final ok = await _confirm(
             'Unwrap wOCT',
             'Burn ${_microClean(BigInt.from(micro))} wOCT.\n'
             'OCT released to:\n$recipient\n\n'
-            '2 Ethereum txs (approve + burn) · ${speed.label} gas.',
+            '2 Ethereum txs (approve + burn)'
+            '${_isWalletConnect ? '' : ' · ${speed.label} gas'}.',
           );
           if (ok != true) return;
-          setState(() { _working = true; _status = null; });
+          setState(() { _working = true; });
+          _setStatus(
+            _isWalletConnect
+                ? 'Approve both transactions in your wallet…'
+                : 'Submitting approve + burn…',
+            _StatusType.info,
+          );
           await _service.startUnwrap(
             sender: sender,
             octraRecipient: recipient,
@@ -345,22 +379,39 @@ class _BridgeScreenState extends State<BridgeScreen> {
   // ── claim ───────────────────────────────────────────────────────────────────
 
   Future<void> _claim(BridgeRecord rec) async {
-    final sender = _senderFor(_ethAccount);
+    final sender = await _resolveSender();
     if (sender == null) {
-      _setStatus('Connect a signing Ethereum wallet to claim.', _StatusType.warning);
+      if (_isWalletConnect) {
+        _setStatus('Wallet session expired. Reconnecting…', _StatusType.warning);
+        await _connectWalletConnect();
+      } else {
+        _setStatus('Connect a signing Ethereum wallet to claim.', _StatusType.warning);
+      }
       return;
     }
     try {
-      final speed = await _pickGasSpeed(gasLimit: EthConstants.claimGasLimit);
-      if (speed == null) return;
+      // WalletConnect wallets set their own gas; only show the picker for
+      // in-app accounts where we control the fee.
+      GasSpeed speed = GasSpeed.standard;
+      if (!_isWalletConnect) {
+        final picked = await _pickGasSpeed(gasLimit: EthConstants.claimGasLimit);
+        if (picked == null) return;
+        speed = picked;
+      }
       final amount = BigInt.tryParse(rec.amountRaw) ?? BigInt.zero;
       final ok = await _confirm(
         'Claim wOCT',
-        'Claim ${_microClean(amount)} wOCT to your Ethereum wallet.\n'
-        '${speed.label} gas.',
+        'Claim ${_microClean(amount)} wOCT to your Ethereum wallet.'
+        '${_isWalletConnect ? '' : '\n${speed.label} gas.'}',
       );
       if (ok != true) return;
       setState(() => _working = true);
+      _setStatus(
+        _isWalletConnect
+            ? 'Approve the claim in your wallet…'
+            : 'Submitting claim…',
+        _StatusType.info,
+      );
       await _service.claim(rec, sender, gasSpeed: speed);
       _setStatus('${_microClean(amount)} wOCT claimed!', _StatusType.success);
     } catch (e) {
@@ -462,6 +513,21 @@ class _BridgeScreenState extends State<BridgeScreen> {
       return 'Rate limited. Wait a moment and try again.';
     }
 
+    // WalletConnect
+    if (l.contains('rejected') || l.contains('user disapproved') ||
+        l.contains('user denied') || l.contains('disapproved request')) {
+      return 'Request rejected in your wallet.';
+    }
+    if (l.contains('walletconnect is not connected') ||
+        (l.contains('walletconnect') && l.contains('not connected')) ||
+        l.contains('session') && l.contains('expired')) {
+      return 'Wallet disconnected. Tap Manage to reconnect.';
+    }
+    if (l.contains('jsonrpcerror') || l.contains('request expired') ||
+        l.contains('proposal expired')) {
+      return 'Wallet did not respond. Open your wallet and try again.';
+    }
+
     // Bridge-specific
     if (l.contains('epoch not finalized') || l.contains('claim not available') ||
         l.contains('header is not yet')) {
@@ -484,11 +550,6 @@ class _BridgeScreenState extends State<BridgeScreen> {
     }
     if (l.contains('tx not found') || l.contains('not found in the recovery')) {
       return 'TX not visible yet — takes ~30–40 min to appear.';
-    }
-
-    // Address / amount validation (these usually surface as user messages already)
-    if (l.contains('walletconnect') && l.contains('not connected')) {
-      return 'Wallet disconnected. Reconnect via WalletConnect.';
     }
 
     // Fallback — strip exception prefixes
@@ -657,9 +718,35 @@ class _BridgeScreenState extends State<BridgeScreen> {
                     : Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(_modeLabel(acc.mode),
-                              style: const TextStyle(
-                                  color: Color(0xFF8E8E93), fontSize: 11)),
+                          Row(
+                            children: [
+                              Text(_modeLabel(acc.mode),
+                                  style: const TextStyle(
+                                      color: Color(0xFF8E8E93), fontSize: 11)),
+                              if (acc.mode == EthAccountMode.walletConnect) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  width: 6, height: 6,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: _wc.isConnected
+                                        ? const Color(0xFF30D158)
+                                        : const Color(0xFFFF9F0A),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _wc.isConnected ? 'Live' : 'Offline',
+                                  style: TextStyle(
+                                    color: _wc.isConnected
+                                        ? const Color(0xFF30D158)
+                                        : const Color(0xFFFF9F0A),
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                           Text(_short(acc.address),
                               style: const TextStyle(
                                   color: Colors.white,
@@ -668,21 +755,27 @@ class _BridgeScreenState extends State<BridgeScreen> {
                         ],
                       ),
               ),
-              if (acc != null) ...[
+              if (acc != null && !(_isWalletConnect && !_wc.isConnected)) ...[
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(_wei(_service.ethBalanceWei),
                         style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
-                    Text('ETH',
-                        style: const TextStyle(color: Color(0xFF636366), fontSize: 10)),
+                    const Text('ETH',
+                        style: TextStyle(color: Color(0xFF636366), fontSize: 10)),
                   ],
                 ),
                 const SizedBox(width: 12),
               ],
               _SmallButton(
-                label: acc == null ? 'Set up' : 'Manage',
-                onTap: _manageAccount,
+                label: acc == null
+                    ? 'Set up'
+                    : (_isWalletConnect && !_wc.isConnected)
+                        ? 'Reconnect'
+                        : 'Manage',
+                onTap: (acc != null && _isWalletConnect && !_wc.isConnected)
+                    ? _connectWalletConnect
+                    : _manageAccount,
               ),
             ],
           ),
@@ -1224,6 +1317,20 @@ class _WalletInfo {
   final String schemePrefix;
   final String? universalPrefix;
   const _WalletInfo(this.name, this.color, this.letter, this.schemePrefix, this.universalPrefix);
+
+  /// Bare native scheme for foregrounding the wallet (e.g. `metamask://`).
+  String get redirectNative {
+    final i = schemePrefix.indexOf('wc?uri=');
+    return i >= 0 ? schemePrefix.substring(0, i) : schemePrefix;
+  }
+
+  /// Bare universal link base (e.g. `https://metamask.app.link/`).
+  String? get redirectUniversal {
+    final u = universalPrefix;
+    if (u == null) return null;
+    final i = u.indexOf('wc?uri=');
+    return i >= 0 ? u.substring(0, i) : u;
+  }
 }
 
 // ─── WalletConnect wallet picker sheet ───────────────────────────────────────
@@ -1239,6 +1346,11 @@ class _WalletPickerSheetState extends State<_WalletPickerSheet> {
   bool _showQr = false;
 
   Future<void> _openWallet(_WalletInfo info) async {
+    // Remember this wallet so later signing requests can foreground it.
+    WcService.instance.setPreferredRedirect(
+      native: info.redirectNative,
+      universal: info.redirectUniversal,
+    );
     final encoded = Uri.encodeComponent(widget.wcUri);
     final urls = [
       if (info.universalPrefix != null) '${info.universalPrefix}$encoded',

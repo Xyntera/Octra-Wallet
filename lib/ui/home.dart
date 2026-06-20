@@ -1252,7 +1252,11 @@ class _DashboardTabState extends State<DashboardTab> {
           ),
         ),
       ),
-    );
+    ).whenComplete(() {
+      addressController.dispose();
+      amountController.dispose();
+      messageController.dispose();
+    });
   }
 
   void _showPrivacyAmountSheet(BuildContext context, {required bool encrypt}) {
@@ -1378,7 +1382,7 @@ class _DashboardTabState extends State<DashboardTab> {
           ),
         ),
       ),
-    );
+    ).whenComplete(controller.dispose);
   }
 
   void _showPrivateSendSheet(BuildContext context) {
@@ -1503,7 +1507,10 @@ class _DashboardTabState extends State<DashboardTab> {
           ),
         ),
       ),
-    );
+    ).whenComplete(() {
+      addressController.dispose();
+      amountController.dispose();
+    });
   }
 
   void _showStealthClaimsSheet(BuildContext context) {
@@ -1680,7 +1687,14 @@ class _DashboardTabState extends State<DashboardTab> {
           ),
         ),
       ),
-    );
+    ).whenComplete(() {
+      // Dispose the row controllers once the sheet is dismissed (they are
+      // created per-open and would otherwise leak on every bulk-send open).
+      for (final row in rows) {
+        row['to']!.dispose();
+        row['amount']!.dispose();
+      }
+    });
   }
 
   Future<void> _registerPvacKey(BuildContext context) async {
@@ -2301,6 +2315,8 @@ class _TokensSheetState extends State<_TokensSheet> {
         ),
       ),
     );
+    toController.dispose();
+    amountController.dispose();
     if (mounted) await _load();
   }
 

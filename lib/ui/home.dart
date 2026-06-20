@@ -23,6 +23,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../wallet.dart';
 import '../eth/eth_wallet_store.dart';
 import 'bridge.dart';
+import 'dapp_browser.dart';
 import 'wallet_setup.dart';
 import 'pin_screen.dart';
 import 'portfolio.dart';
@@ -577,6 +578,12 @@ class _DashboardTabState extends State<DashboardTab> {
                           CupertinoPageRoute(
                               builder: (_) => const BridgeScreen()),
                         ),
+                      ),
+                      _buildActionButton(
+                        context,
+                        icon: CupertinoIcons.compass,
+                        label: 'dApps',
+                        onTap: () => _openDapps(context),
                       ),
                     ],
                   ).animate().fadeIn(delay: 200.ms),
@@ -1695,6 +1702,54 @@ class _DashboardTabState extends State<DashboardTab> {
         row['amount']!.dispose();
       }
     });
+  }
+
+  /// Opens the dApp browser. The in-app webview + RFC-O-1 provider are only
+  /// available where flutter_inappwebview has an implementation (Android/macOS);
+  /// on Linux/Windows we fall back to the system browser (no signing).
+  void _openDapps(BuildContext context) {
+    if (Platform.isAndroid || Platform.isMacOS) {
+      Navigator.of(context).push(
+        CupertinoPageRoute(builder: (_) => const DappHomeScreen()),
+      );
+      return;
+    }
+    showCupertinoModalPopup<void>(
+      context: context,
+      builder: (ctx) => CupertinoActionSheet(
+        title: const Text('Open a dApp'),
+        message: const Text(
+            'In-app dApp connection is available on mobile. On desktop, dApps '
+            'open in your system browser without wallet signing.'),
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              final uri = Uri.tryParse('https://octra.network');
+              if (uri != null) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            },
+            child: const Text('Octra Explorer'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              final uri = Uri.tryParse('https://bridge.0xio.xyz');
+              if (uri != null) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            },
+            child: const Text('OCT ⇄ wOCT Bridge'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDestructiveAction: true,
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('Cancel'),
+        ),
+      ),
+    );
   }
 
   Future<void> _registerPvacKey(BuildContext context) async {

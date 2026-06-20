@@ -1099,12 +1099,37 @@ class WalletController extends ChangeNotifier {
   Future<RpcResponse> sendTransaction(
       String to, double amount, String? msg) async {
     if (currentWallet == null) return RpcResponse(0, "", null);
+    try {
+      final signed = await buildSignedTransaction(
+        to: to,
+        microAmount: (amount * 1000000).toInt(),
+        message: msg,
+      );
+      return await rpc.sendTransaction(signed);
+    } on StateError catch (e) {
+      return RpcResponse(0, e.message, null);
+    }
+  }
+
+  /// Builds and signs a standard/`call` transaction WITHOUT submitting it,
+  /// returning the signed tx map (canonical fields + signature + public_key).
+  ///
+  /// Nonce = max(on-chain nonce, max staged nonce) + 1 (checks `staging_view`).
+  /// Used by [sendTransaction] and by the RFC-O-1 dApp provider
+  /// (`octra_signTransaction` / `octra_sendTransaction`). Throws [StateError]
+  /// when there is no wallet or the key/address mismatch.
+  Future<Map<String, dynamic>> buildSignedTransaction({
+    required String to,
+    required int microAmount,
+    String? message,
+    String opType = 'standard',
+    String? encryptedData,
+  }) async {
+    if (currentWallet == null) throw StateError('No wallet selected');
     final wallet = currentWallet!;
 
-    // Refresh nonce first
-    await refresh(); // or just get staging
-
-    // Get staging nonce
+    // Refresh + compute nonce from chain and staging pool.
+    await refresh();
     final staging = await rpc.getStaging();
     int currentNonce = nonce;
     if (staging.containsKey('staged_transactions')) {
@@ -1121,30 +1146,55 @@ class WalletController extends ChangeNotifier {
     }
 
     if (!await _walletMatchesPrivateKey(wallet)) {
-      return RpcResponse(
-          0, "Selected wallet address does not match its private key", null);
+      throw StateError(
+          'Selected wallet address does not match its private key');
     }
 
-    final txNonce = currentNonce + 1;
-    final feeRaw = await recommendedFeeRaw('standard');
+    final feeRaw = await recommendedFeeRaw(opType);
     final payload = <String, dynamic>{
       "from": wallet.address,
       "to_": to, // Note: cli.py uses 'to_' (line 502)
-      "amount": (amount * 1000000).toInt().toString(),
-      "nonce": txNonce,
+      "amount": microAmount.toString(),
+      "nonce": currentNonce + 1,
       "ou": feeRaw,
       "timestamp": (DateTime.now().millisecondsSinceEpoch / 1000).toDouble(),
-      "op_type": "standard",
+      "op_type": opType,
     };
-
-    if (msg != null && msg.isNotEmpty) {
-      payload["message"] = msg;
+    if (encryptedData != null && encryptedData.isNotEmpty) {
+      payload["encrypted_data"] = encryptedData;
+    }
+    if (message != null && message.isNotEmpty) {
+      payload["message"] = message;
     }
 
-    final signed = await _signTxPayload(wallet, payload);
-
-    return await rpc.sendTransaction(signed);
+    return _signTxPayload(wallet, payload);
   }
+
+  /// Signs an arbitrary UTF-8 [message] with the current wallet's Ed25519 key
+  /// for the RFC-O-1 `octra_signMessage` response. Returns
+  /// `{address, publicKey, signature}` (publicKey/signature base64). The dApp
+  /// verifies the signature against the returned publicKey.
+  Future<Map<String, String>> signMessageForDapp(String message) async {
+    if (currentWallet == null) throw StateError('No wallet selected');
+    final wallet = currentWallet!;
+    final signature = await _signMessageBase64(wallet, message);
+    final publicKey = await _walletPublicKeyBase64(wallet);
+    return {
+      'address': wallet.address,
+      'publicKey': publicKey,
+      'signature': signature,
+    };
+  }
+
+  /// Network metadata for the RFC-O-1 `octra_networkInfo` response.
+  Map<String, dynamic> dappNetworkInfo() => {
+        'id': networkProfileSync, // 'mainnet' | 'devnet'
+        'name': activeNetworkLabelSync, // 'Mainnet' | 'Devnet'
+        'rpcUrl': rpcBaseUrlSync,
+        'explorerUrl': explorerBaseUrlSync,
+        'supportsPrivacy': nativeCore.isAvailable,
+        'isTestnet': isDevnetSync,
+      };
 
   Future<List<RpcResponse>> sendBulkPublicTransfers(
     List<Map<String, String>> recipients,

@@ -1,0 +1,44 @@
+name: Regenerate icons & splash
+
+# Manual only — produces the platform icon sets (incl. Android adaptive icon),
+# the Windows .ico, macOS/web icons, and the native splash from the committed
+# source images, then commits them back to the branch.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Regenerate launcher icons
+        run: dart run flutter_launcher_icons
+
+      - name: Regenerate native splash
+        run: dart run flutter_native_splash:create
+
+      - name: Commit regenerated assets
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No asset changes."
+          else
+            git commit -m "Regenerate app icons and splash from branding/icon_master.png"
+            git push
+          fi

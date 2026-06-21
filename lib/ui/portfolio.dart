@@ -6,6 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../wallet.dart';
+import '../eth/eth_wallet_store.dart';
+import 'bridge.dart';
 
 class PortfolioTab extends StatefulWidget {
   const PortfolioTab({super.key});
@@ -62,6 +64,8 @@ class _PortfolioTabState extends State<PortfolioTab> {
                   _PriceChartCard(ctrl: ctrl),
                   const SizedBox(height: 20),
                   _WalletBreakdownList(ctrl: ctrl),
+                  const SizedBox(height: 20),
+                  const _EvmPortfolioSection(),
                   const SizedBox(height: 40),
                 ],
               ),
@@ -406,6 +410,141 @@ class _WalletBreakdownList extends StatelessWidget {
             ),
           );
         }),
+      ],
+    );
+  }
+}
+
+// ── EVM Portfolio section ────────────────────────────────────────────────────
+
+class _EvmPortfolioSection extends StatelessWidget {
+  const _EvmPortfolioSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.watch<EthWalletStore>();
+    final acc = store.account;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('EVM Wallet',
+                style: GoogleFonts.outfit(color: CupertinoColors.systemGrey, fontSize: 14)),
+            const Spacer(),
+            if (acc != null)
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () async {
+                  await store.refreshBalances();
+                },
+                child: store.isRefreshingBalances
+                    ? const CupertinoActivityIndicator(radius: 8)
+                    : const Icon(CupertinoIcons.refresh, size: 16, color: CupertinoColors.systemBlue),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: () => Navigator.of(context).push(
+            CupertinoPageRoute(builder: (_) => const BridgeScreen()),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C1C1E),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFF0A84FF).withValues(alpha: acc != null ? 0.3 : 0.1)),
+            ),
+            child: acc == null
+                ? Row(
+                    children: [
+                      const Icon(CupertinoIcons.link_circle_fill, color: Color(0xFF0A84FF), size: 32),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('No EVM wallet', style: GoogleFonts.outfit(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500)),
+                            Text('Tap to set up for bridging', style: GoogleFonts.outfit(color: CupertinoColors.systemGrey, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      const Icon(CupertinoIcons.chevron_right, color: Color(0xFF48484A), size: 16),
+                    ],
+                  )
+                : Column(
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(CupertinoIcons.link_circle_fill, color: Color(0xFF0A84FF), size: 32),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Ethereum', style: GoogleFonts.outfit(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500)),
+                                Text(
+                                  '${acc.address.substring(0, 8)}…${acc.address.substring(acc.address.length - 6)}',
+                                  style: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 12, fontFamily: 'monospace'),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(CupertinoIcons.chevron_right, color: Color(0xFF48484A), size: 16),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2C2C2E),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('ETH', style: GoogleFonts.outfit(color: CupertinoColors.systemGrey, fontSize: 12)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    store.isRefreshingBalances ? '…' : (store.ethBalanceWei.toDouble() / 1e18).toStringAsFixed(5),
+                                    style: GoogleFonts.outfit(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2C2C2E),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('wOCT', style: GoogleFonts.outfit(color: CupertinoColors.systemGrey, fontSize: 12)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    store.isRefreshingBalances ? '…' : (store.woctBalanceRaw.toDouble() / 1e6).toStringAsFixed(4),
+                                    style: GoogleFonts.outfit(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+          ),
+        ),
       ],
     );
   }

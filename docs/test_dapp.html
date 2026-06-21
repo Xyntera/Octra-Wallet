@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Octra RFC-O-1 Provider Test dApp</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; background: #000; color: #eee; margin: 0; padding: 16px; }
+    h1 { font-size: 18px; }
+    button { display: block; width: 100%; margin: 6px 0; padding: 12px; font-size: 15px;
+             background: #1c1c1e; color: #0a84ff; border: 1px solid #2c2c2e; border-radius: 10px; }
+    button:active { background: #2c2c2e; }
+    pre { background: #1c1c1e; padding: 12px; border-radius: 10px; white-space: pre-wrap;
+          word-break: break-all; font-size: 12px; min-height: 60px; }
+    .ok { color: #30d158; } .err { color: #ff453a; } .muted { color: #8e8e93; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>RFC-O-1 Provider Test</h1>
+  <p class="muted" id="detect">Detecting window.octra…</p>
+
+  <button onclick="call('octra_requestAccounts', [{ permissions: ['read_address','sign_messages','send_transactions','contract_calls'] }])">requestAccounts</button>
+  <button onclick="call('octra_accounts')">accounts</button>
+  <button onclick="call('octra_networkInfo')">networkInfo</button>
+  <button onclick="call('octra_permissions')">permissions</button>
+  <button onclick="call('octra_signMessage', ['Hello from a test dApp ' + Date.now()])">signMessage</button>
+  <button onclick="sendTx()">sendTransaction (0.001 OCT to self)</button>
+  <button onclick="call('octra_balance', [account])">octra_balance (pass-through)</button>
+
+  <pre id="out">—</pre>
+
+  <script>
+    var account = null;
+    var out = document.getElementById('out');
+
+    function show(label, value, ok) {
+      out.innerHTML = '<span class="' + (ok ? 'ok' : 'err') + '">' + label + '</span>\n' +
+        (typeof value === 'string' ? value : JSON.stringify(value, null, 2));
+    }
+
+    function call(method, params) {
+      if (!window.octra) { show(method, 'window.octra not found', false); return Promise.resolve(); }
+      return window.octra.request({ method: method, params: params || [] })
+        .then(function (res) {
+          if (method === 'octra_requestAccounts' && Array.isArray(res)) account = res[0];
+          show(method + ' ✓', res, true);
+          return res;
+        })
+        .catch(function (err) {
+          show(method + ' ✗ (code ' + (err && err.code) + ')', (err && err.message) || String(err), false);
+        });
+    }
+
+    function sendTx() {
+      if (!account) { show('sendTransaction', 'Call requestAccounts first', false); return; }
+      // amount is in OCT (the @0xio/sdk convention); 0.001 = 0.001 OCT.
+      call('octra_sendTransaction', [{ to: account, amount: '0.001', message: 'test' }]);
+    }
+
+    function refreshDetect() {
+      var d = document.getElementById('detect');
+      if (window.octra && window.octra.isOctra) {
+        d.innerHTML = '<span class="ok">window.octra detected</span> · v' +
+          (window.octra.version || '?') + ' · ' + (window.octra.providerId || '');
+      } else {
+        d.textContent = 'window.octra NOT found — open inside Octra Wallet.';
+      }
+    }
+
+    // Provider events.
+    function bindEvents() {
+      if (!window.octra) return;
+      ['connect','disconnect','accountsChanged','networkChanged','permissionsChanged']
+        .forEach(function (ev) {
+          window.octra.on(ev, function (payload) {
+            console.log('event', ev, payload);
+          });
+        });
+    }
+
+    window.addEventListener('octra#initialized', function () { refreshDetect(); bindEvents(); });
+    refreshDetect();
+    bindEvents();
+  </script>
+</body>
+</html>

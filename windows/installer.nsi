@@ -13,7 +13,7 @@ Unicode True
 !endif
 
 !define APP_NAME   "Octra Wallet"
-!define APP_EXE    "ouqro_wallet.exe"
+!define APP_EXE    "octra_wallet.exe"
 !define PUBLISHER  "Octra Wallet"
 !define REG_ROOT   "Software\OctraWallet"
 !define REG_UNINST "Software\Microsoft\Windows\CurrentVersion\Uninstall\OctraWallet"

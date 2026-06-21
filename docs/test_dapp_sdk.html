@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>@0xio/sdk ↔ Octra Wallet Test</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; background: #000; color: #eee; margin: 0; padding: 16px; }
+    h1 { font-size: 17px; }
+    button { display: block; width: 100%; margin: 6px 0; padding: 12px; font-size: 15px;
+             background: #1c1c1e; color: #0a84ff; border: 1px solid #2c2c2e; border-radius: 10px; }
+    button:disabled { color: #48484a; }
+    button:active { background: #2c2c2e; }
+    pre { background: #1c1c1e; padding: 12px; border-radius: 10px; white-space: pre-wrap;
+          word-break: break-all; font-size: 12px; min-height: 70px; }
+    .ok { color: #30d158; } .err { color: #ff453a; } .muted { color: #8e8e93; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>@0xio/sdk → window.octra</h1>
+  <p class="muted" id="status">Loading @0xio/sdk v2.7.1…</p>
+
+  <button id="bConnect" disabled onclick="run('connect')">wallet.connect()</button>
+  <button id="bInfo" disabled onclick="run('info')">address + networkInfo</button>
+  <button id="bSign" disabled onclick="run('sign')">signMessage("Hello from @0xio/sdk")</button>
+  <button id="bSend" disabled onclick="run('send')">sendTransaction(0.001 OCT → self)</button>
+  <button id="bBal" disabled onclick="run('balance')">getBalance()</button>
+
+  <pre id="out">—</pre>
+
+  <script type="module">
+    let wallet = null;
+    let sdkError = null;
+    const out = document.getElementById('out');
+    const status = document.getElementById('status');
+
+    function show(label, value, ok) {
+      out.innerHTML = '<span class="' + (ok ? 'ok' : 'err') + '">' + label + '</span>\n' +
+        (typeof value === 'string' ? value : JSON.stringify(value, null, 2));
+    }
+    function enable(on) {
+      ['bConnect','bInfo','bSign','bSend','bBal'].forEach(function (id) {
+        document.getElementById(id).disabled = !on;
+      });
+    }
+
+    // Load the real published SDK as browser ESM.
+    try {
+      const sdk = await import('https://esm.sh/@0xio/sdk@2.7.1');
+      const ZeroXIOWallet = sdk.ZeroXIOWallet || (sdk.default && sdk.default.ZeroXIOWallet);
+      const detect = sdk.detectWalletAdapter;
+      const adapter = detect ? detect() : null;
+      window.__sdk = sdk;
+      wallet = new ZeroXIOWallet();
+      status.innerHTML = '<span class="ok">@0xio/sdk loaded</span> · adapter: ' +
+        (adapter ? (adapter.constructor && adapter.constructor.name) : 'none') +
+        ' · window.octra: ' + (window.octra && window.octra.isOctra ? 'yes' : 'no');
+      enable(true);
+    } catch (e) {
+      sdkError = e;
+      status.innerHTML = '<span class="err">Failed to load @0xio/sdk</span> — ' +
+        (e && e.message ? e.message : String(e));
+    }
+
+    window.run = async function (kind) {
+      if (!wallet) { show(kind, sdkError ? String(sdkError) : 'SDK not ready', false); return; }
+      try {
+        let res;
+        switch (kind) {
+          case 'connect':
+            res = await wallet.connect();
+            break;
+          case 'info':
+            res = { address: wallet.getAddress(), network: await wallet.getNetworkInfo() };
+            break;
+          case 'sign':
+            res = await wallet.signMessage('Hello from @0xio/sdk');
+            break;
+          case 'send': {
+            const to = wallet.getAddress();
+            if (!to) { show('send', 'connect() first', false); return; }
+            // amount is in OCT per the SDK type ("Amount in OCT").
+            res = await wallet.sendTransaction({ to: to, amount: 0.001, message: 'sdk test' });
+            break;
+          }
+          case 'balance':
+            res = await wallet.getBalance(true);
+            break;
+        }
+        show(kind + ' ✓', res, true);
+      } catch (e) {
+        const code = e && e.code != null ? ' (code ' + e.code + ')' : '';
+        show(kind + ' ✗' + code, (e && e.message) || String(e), false);
+      }
+    };
+  </script>
+</body>
+</html>

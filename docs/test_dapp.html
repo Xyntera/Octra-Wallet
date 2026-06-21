@@ -53,8 +53,8 @@
 
     function sendTx() {
       if (!account) { show('sendTransaction', 'Call requestAccounts first', false); return; }
-      // amount is in micro-OCT per RFC-O-1 (1000 = 0.001 OCT).
-      call('octra_sendTransaction', [{ to: account, amount: '1000', message: 'test' }]);
+      // amount is in OCT (the @0xio/sdk convention); 0.001 = 0.001 OCT.
+      call('octra_sendTransaction', [{ to: account, amount: '0.001', message: 'test' }]);
     }
 
     function refreshDetect() {

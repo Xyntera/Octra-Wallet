@@ -328,7 +328,7 @@ class OctraProviderHost {
       title: 'Submit transaction',
       rows: [
         MapEntry('To', (signed['to_'] ?? signed['to'] ?? '').toString()),
-        MapEntry('Amount', _fmtMicro(_microFrom(signed['amount']))),
+        MapEntry('Amount', _fmtMicro(_rawMicro(signed['amount']))),
         MapEntry('Network', wallet.activeNetworkLabelSync),
       ],
     ));
@@ -414,10 +414,23 @@ class OctraProviderHost {
 
   Future<Map<String, dynamic>> _claimStealth(List params) async {
     _require(DappPermission.stealthClaim);
-    // RFC-O-1: params = [{ outputId, fee? }]. The wallet needs the full claim
-    // (secret + blinding) which only a scan yields, so resolve it by id.
-    final p = _mapParam(params);
-    final outputId = (p['outputId'] ?? p['id'] ?? p['output_id'])?.toString();
+    // The @0xio/sdk's claimPrivateTransfer(transferId) forwards a transfer id;
+    // RFC-O-1 uses [{ outputId, fee? }]. Accept a bare string id or any of the
+    // common id keys. The wallet needs the full claim (secret + blinding) which
+    // only a scan yields, so resolve it by id.
+    String? outputId;
+    if (params.isNotEmpty) {
+      final first = params[0];
+      if (first is String) {
+        outputId = first;
+      } else if (first is Map) {
+        outputId = (first['outputId'] ??
+                first['transferId'] ??
+                first['id'] ??
+                first['output_id'])
+            ?.toString();
+      }
+    }
     if (outputId == null || outputId.isEmpty) {
       throw _ProviderError(DappErr.unsupported, 'Missing "outputId"');
     }
@@ -436,7 +449,7 @@ class OctraProviderHost {
       title: 'Claim stealth payment',
       rows: [
         if (claim['amount_raw'] != null)
-          MapEntry('Amount', _fmtMicro(_microFrom(claim['amount_raw']))),
+          MapEntry('Amount', _fmtMicro(_rawMicro(claim['amount_raw']))),
       ],
     ));
     if (!ok) throw _ProviderError(DappErr.userRejected, 'User rejected');
@@ -530,21 +543,24 @@ class OctraProviderHost {
     return v.toString();
   }
 
-  /// Parses an amount to micro-OCT. RFC-O-1 passes micro-OCT integer strings
-  /// (e.g. '1000000' = 1 OCT). For resilience we also accept decimal OCT
-  /// (a value containing '.', e.g. '10.5') and convert it — a fractional part
-  /// can only mean OCT, never sub-micro, so this is unambiguous.
+  /// Parses a dApp-supplied amount **in OCT** to micro-OCT. The @0xio/sdk types
+  /// define `amount` as "Amount in OCT" (a string or number, e.g. 10.5 or
+  /// "10.5" = 10.5 OCT) and the SDK forwards it to window.octra unchanged — so
+  /// the wallet owns the OCT→micro conversion (×1,000,000). This is the dominant
+  /// real-world convention; a bare integer like 10 therefore means 10 OCT.
   int _microFrom(dynamic v) {
     if (v == null) return 0;
-    if (v is int) return v; // micro-OCT integer
-    if (v is double) return (v * 1000000).round(); // decimal OCT
-    final s = v.toString().trim();
-    if (s.isEmpty) return 0;
-    if (s.contains('.')) {
-      final d = double.tryParse(s);
-      return d == null ? 0 : (d * 1000000).round();
-    }
-    return int.tryParse(s) ?? 0; // micro-OCT integer string
+    final d = (v is num) ? v.toDouble() : double.tryParse(v.toString().trim());
+    if (d == null || d < 0) return 0;
+    return (d * 1000000).round();
+  }
+
+  /// Parses a value that is already in raw micro-OCT (e.g. a stored signed-tx
+  /// `amount` or a scan's `amount_raw`) for display — no OCT scaling.
+  int _rawMicro(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    return int.tryParse(v.toString().trim()) ?? 0;
   }
 
   String _fmtMicro(int micro) => '${(micro / 1000000.0).toStringAsFixed(6)} OCT';
